@@ -91,6 +91,8 @@ function bindUi() {
     ui.runsPrevBtn = document.getElementById("runs-prev-btn");
     ui.runsNextBtn = document.getElementById("runs-next-btn");
     ui.runsPageInfo = document.getElementById("runs-page-info");
+    ui.downloadAllJsonBtn = document.getElementById("download-all-json-btn");
+    ui.downloadAllMdBtn = document.getElementById("download-all-md-btn");
     ui.weeklyChartCanvas = document.getElementById("weekly-chart");
 
     ui.openAiBtn = document.getElementById("get-openai-btn");
@@ -99,6 +101,9 @@ function bindUi() {
     ui.coachPrompt = document.getElementById("coach-prompt");
     ui.copyBtn = document.getElementById("copy-btn");
     ui.copyToast = document.getElementById("copy-toast");
+
+    ui.downloadAllJsonBtn.disabled = true;
+    ui.downloadAllMdBtn.disabled = true;
 }
 
 function wireEvents() {
@@ -113,6 +118,8 @@ function wireEvents() {
     ui.copyBtn.addEventListener("click", handleCopyPrompt);
     ui.runsPrevBtn.addEventListener("click", () => changeRunsPage(-1));
     ui.runsNextBtn.addEventListener("click", () => changeRunsPage(1));
+    ui.downloadAllJsonBtn.addEventListener("click", () => downloadAllRuns("json"));
+    ui.downloadAllMdBtn.addEventListener("click", () => downloadAllRuns("md"));
 }
 
 async function initApp() {
@@ -680,6 +687,8 @@ function renderRuns(runs) {
     }
 
     ui.runsCount.textContent = `${runs.length} 筆`;
+    ui.downloadAllJsonBtn.disabled = runs.length === 0;
+    ui.downloadAllMdBtn.disabled = runs.length === 0;
 
     if (runs.length === 0) {
         ui.runsList.innerHTML = '<p class="empty-state">找不到跑步活動，請確認 Strava 帳號中是否有 `Run` 類型資料。</p>';
@@ -742,14 +751,14 @@ function renderRuns(runs) {
 
     ui.runsList.querySelectorAll(".js-toggle-details").forEach((button) => {
         button.addEventListener("click", async () => {
-            const runId = button.getAttribute("data-run-id");
+            const runId = Number(button.getAttribute("data-run-id"));
             await toggleRunDetails(runId, button);
         });
     });
 
     ui.runsList.querySelectorAll(".js-download-run").forEach((button) => {
         button.addEventListener("click", async () => {
-            const runId = button.getAttribute("data-run-id");
+            const runId = Number(button.getAttribute("data-run-id"));
             await downloadRunJson(runId, button);
         });
     });
@@ -1032,6 +1041,19 @@ function renderRunChart(canvasId, streams) {
     state.runCharts.set(canvasId, chart);
 }
 
+/**
+ * Download one run as a JSON file using the run date as the filename prefix.
+ *
+ * Parameters:
+ * - runId (number): The Strava run identifier.
+ * - button (HTMLButtonElement): The action button used to trigger this export.
+ *
+ * Returns:
+ * - Promise<void>: Resolves when the download flow is completed.
+ *
+ * Raises:
+ * - No explicit throw. Errors are handled internally and reflected in button state.
+ */
 async function downloadRunJson(runId, button) {
     const run = state.summary?.runs.find((entry) => entry.id === runId);
     if (!run) {
@@ -1060,7 +1082,8 @@ async function downloadRunJson(runId, button) {
             streams: bundle.streams,
         };
 
-        downloadJson(payload, `strava_run_${run.id}.json`);
+        const datedFilename = `${formatDateForFilename(run.startedAt)}_${slugifyFilename(run.name)}.json`;
+        downloadJson(payload, datedFilename);
         button.textContent = "已下載";
         setTimeout(() => {
             button.disabled = false;
@@ -1076,6 +1099,229 @@ async function downloadRunJson(runId, button) {
     }
 }
 
+/**
+ * Download all loaded runs as either a merged JSON file or a Markdown report.
+ *
+ * Parameters:
+ * - format (("json"|"md")): The requested output format.
+ *
+ * Returns:
+ * - Promise<void>: Resolves when export is completed or gracefully aborted.
+ *
+ * Raises:
+ * - No explicit throw. Errors are handled and surfaced through status messages.
+ */
+async function downloadAllRuns(format) {
+    if (!state.summary?.runs?.length) {
+        setStatus("目前沒有可匯出的跑步資料。", "error");
+        return;
+    }
+
+    const triggerButton = format === "json" ? ui.downloadAllJsonBtn : ui.downloadAllMdBtn;
+    const originalLabel = triggerButton.textContent;
+    triggerButton.disabled = true;
+    triggerButton.textContent = "整理中...";
+
+    try {
+        const aggregate = await buildAggregateExportData(state.summary.runs);
+        const timestamp = formatDateForFilename(new Date());
+
+        if (format === "json") {
+            downloadJson(aggregate, `${timestamp}_strava_runs_aggregate.json`);
+            setStatus(`已匯出 ${aggregate.runs.length} 筆活動為單一 JSON。`, "success");
+        } else {
+            const markdown = buildAggregateMarkdown(aggregate);
+            downloadText(markdown, `${timestamp}_strava_runs_aggregate.md`, "text/markdown");
+            setStatus(`已匯出 ${aggregate.runs.length} 筆活動為 Markdown。`, "success");
+        }
+    } catch (error) {
+        console.error(error);
+        setStatus(`匯出失敗：${error.message}`, "error");
+    } finally {
+        triggerButton.disabled = false;
+        triggerButton.textContent = originalLabel;
+    }
+}
+
+/**
+ * Build a merged export object containing all runs and their cached/fetched details.
+ *
+ * Parameters:
+ * - runs (Array<object>): The run list from summary state.
+ *
+ * Returns:
+ * - Promise<object>: A normalized aggregate payload for export.
+ *
+ * Raises:
+ * - Error: Propagates errors from detail fetch for visibility in caller.
+ */
+async function buildAggregateExportData(runs) {
+    const records = [];
+
+    for (const run of runs) {
+        const bundle = state.detailCache.has(run.id) ? state.detailCache.get(run.id) : await fetchRunDetailBundle(run.id);
+        state.detailCache.set(run.id, bundle);
+
+        records.push({
+            activity_id: run.id,
+            date: run.dateLabel,
+            started_at_local: run.startedAt?.toISOString?.() || null,
+            name: run.name,
+            summary: {
+                distance_km: Number(run.distanceKm.toFixed(2)),
+                moving_time_seconds: run.movingTimeSec,
+                average_pace: run.averagePaceLabel,
+                average_heartrate: run.averageHeartrate,
+                total_elevation_gain_m: Math.round(run.elevationGain),
+            },
+            detail: bundle.detail,
+            streams: bundle.streams,
+        });
+    }
+
+    return {
+        exported_at: new Date().toISOString(),
+        run_count: records.length,
+        runs: records,
+    };
+}
+
+/**
+ * Convert aggregate run data into a Markdown report.
+ *
+ * Parameters:
+ * - aggregate (object): Aggregate payload generated by buildAggregateExportData.
+ *
+ * Returns:
+ * - string: Markdown document content.
+ *
+ * Raises:
+ * - No explicit throw. Assumes aggregate payload shape is valid.
+ */
+function buildAggregateMarkdown(aggregate) {
+    const lines = [
+        "# Strava Runs Aggregate Export",
+        "",
+        `- Exported at: ${aggregate.exported_at}`,
+        `- Run count: ${aggregate.run_count}`,
+        "",
+    ];
+
+    aggregate.runs.forEach((run, index) => {
+        lines.push(`## ${index + 1}. ${run.name}`);
+        lines.push(`- Date: ${run.date}`);
+        lines.push(`- Distance: ${run.summary.distance_km} km`);
+        lines.push(`- Moving time: ${run.summary.moving_time_seconds} sec`);
+        lines.push(`- Average pace: ${run.summary.average_pace}`);
+        lines.push(
+            `- Average heartrate: ${run.summary.average_heartrate == null ? "--" : `${run.summary.average_heartrate} bpm`}`,
+        );
+        lines.push(`- Elevation gain: ${run.summary.total_elevation_gain_m} m`);
+
+        const splits = Array.isArray(run.detail?.splits_metric) ? run.detail.splits_metric.slice(0, 8) : [];
+        if (splits.length > 0) {
+            lines.push("");
+            lines.push("| Km | Pace | HR | Elevation |");
+            lines.push("| --- | --- | --- | --- |");
+            splits.forEach((split) => {
+                const pace = split.average_speed ? formatPaceFromSpeed(split.average_speed) : "--";
+                const hr = split.average_heartrate == null ? "--" : Math.round(split.average_heartrate);
+                const elevation = Math.round(split.elevation_difference || 0);
+                lines.push(`| ${split.split} | ${pace} | ${hr} | ${elevation} m |`);
+            });
+        }
+
+        lines.push("");
+    });
+
+    return lines.join("\n");
+}
+
+/**
+ * Download text content as a local file.
+ *
+ * Parameters:
+ * - content (string): The plain text content to save.
+ * - filename (string): The target filename for the browser download.
+ * - mimeType (string): MIME type for the generated blob.
+ *
+ * Returns:
+ * - void: This helper performs side effects only.
+ *
+ * Raises:
+ * - No explicit throw. Browser download APIs may fail silently in restricted contexts.
+ */
+function downloadText(content, filename, mimeType = "text/plain") {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Convert a date-like value into YYYY-MM-DD for stable filenames.
+ *
+ * Parameters:
+ * - dateInput (Date|string|number): Input value convertible to Date.
+ *
+ * Returns:
+ * - string: Normalized date label (YYYY-MM-DD), fallback to "unknown-date".
+ *
+ * Raises:
+ * - No explicit throw. Invalid dates return a fallback string.
+ */
+function formatDateForFilename(dateInput) {
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (Number.isNaN(date.getTime())) {
+        return "unknown-date";
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Sanitize text for safe filename usage.
+ *
+ * Parameters:
+ * - value (string): Original text.
+ *
+ * Returns:
+ * - string: Lower-risk filename segment.
+ *
+ * Raises:
+ * - No explicit throw. Empty results fallback to "run".
+ */
+function slugifyFilename(value) {
+    const sanitized = String(value)
+        .trim()
+        .replace(/[^\p{Letter}\p{Number}_-]+/gu, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
+
+    return sanitized || "run";
+}
+
+/**
+ * Download an object payload as a JSON file.
+ *
+ * Parameters:
+ * - payload (object): JSON-serializable content.
+ * - filename (string): Target filename.
+ *
+ * Returns:
+ * - void: This helper performs side effects only.
+ *
+ * Raises:
+ * - No explicit throw. Browser download APIs may fail silently in restricted contexts.
+ */
 function downloadJson(payload, filename) {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1237,6 +1483,8 @@ function renderEmptyDashboard() {
     ui.runsPageInfo.textContent = "第 1 / 1 頁";
     ui.runsPrevBtn.disabled = true;
     ui.runsNextBtn.disabled = true;
+    ui.downloadAllJsonBtn.disabled = true;
+    ui.downloadAllMdBtn.disabled = true;
     ui.promptContainer.classList.add("hidden");
 
     if (state.weeklyChart) {
