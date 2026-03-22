@@ -3,7 +3,11 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AI教練">
+    
     <!-- Cache-Busting Meta Tags -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -31,11 +35,11 @@
 
             <div class="form-group">
                 <label for="client-id">Strava Client ID</label>
-                <input type="text" id="client-id" placeholder="例如: 123456" />
+                <input type="text" id="client-id" placeholder="例如: 123456" inputmode="numeric" pattern="[0-9]*" autocomplete="username" />
             </div>
             <div class="form-group">
                 <label for="client-secret">Strava Client Secret</label>
-                <input type="password" id="client-secret" placeholder="輸入您的 Secret" />
+                <input type="password" id="client-secret" placeholder="輸入您的 Secret" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
             </div>
 
             <button id="save-settings-btn" class="btn primary-btn" style="width: 100%; margin-top: 1rem;">💾

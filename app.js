@@ -148,15 +148,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Filter and extract
             const runs = activities.filter(act => act.type === "Run" || act.sport_type === "Run");
-            runsData = runs.map(run => ({
-                id: run.id,
-                name: run.name,
-                distance_km: (run.distance / 1000).toFixed(2),
-                moving_time_minutes: (run.moving_time / 60).toFixed(2),
-                average_heartrate: run.average_heartrate,
-                average_speed_m_s: run.average_speed,
-                total_elevation_gain_m: run.total_elevation_gain
-            }));
+            runsData = runs.map(run => {
+                const totalSeconds = run.moving_time;
+                const hours = Math.floor(totalSeconds / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const timeStr = hours > 0 ? `${hours}小時${minutes}分` : `${minutes}分`;
+                const dateStr = new Date(run.start_date_local).toLocaleDateString('zh-TW', {
+                    month: 'long',
+                    day: 'numeric',
+                    weekday: 'short'
+                });
+
+                return {
+                    id: run.id,
+                    name: run.name,
+                    date: dateStr,
+                    distance_km: (run.distance / 1000).toFixed(2),
+                    moving_time_display: timeStr,
+                    moving_time_minutes: (run.moving_time / 60).toFixed(2),
+                    average_heartrate: run.average_heartrate,
+                    average_speed_m_s: run.average_speed,
+                    total_elevation_gain_m: run.total_elevation_gain
+                };
+            });
 
             renderRuns(runsData);
         } catch (error) {
@@ -180,10 +194,13 @@ document.addEventListener("DOMContentLoaded", () => {
             card.className = "run-card";
             card.innerHTML = `
                 <div class="run-info" style="flex: 1;">
-                    <h3>${run.name}</h3>
-                    <div class="run-metrics">
+                    <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+                        <h3 style="margin-bottom: 0;">${run.name}</h3>
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">${run.date}</span>
+                    </div>
+                    <div class="run-metrics" style="margin-top: 0.8rem;">
                         <div class="metric">🏃‍♂️ <span>${run.distance_km}</span> km</div>
-                        <div class="metric">⏱️ <span>${run.moving_time_minutes}</span> min</div>
+                        <div class="metric">⏱️ <span>${run.moving_time_display}</span></div>
                         <div class="metric">❤️ <span>${run.average_heartrate || '--'}</span> bpm</div>
                         <div class="metric">📈 <span>${run.total_elevation_gain_m || 0}</span> m</div>
                     </div>
