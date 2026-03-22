@@ -190,9 +190,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="run-pace" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.5rem;">
                     <div class="metric">配速: <span>${pace}</span> /km</div>
+                    <button class="btn view-details-btn" data-id="${run.id}" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #bfdbfe;">📊 圖表與分段</button>
                     <button class="btn download-run-btn" data-id="${run.id}" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: rgba(192, 132, 252, 0.2); border: 1px solid #c084fc; color: #e9d5ff;">📥 原始感測資料</button>
                     <div class="download-status" id="dl-status-${run.id}" style="font-size: 0.8rem; color: #4ade80; display: none;">打包中..</div>
                 </div>
+                <div class="run-details hidden" id="details-${run.id}" style="grid-column: 1 / -1;"></div>
             `;
             runsList.appendChild(card);
         });
@@ -203,6 +205,196 @@ document.addEventListener("DOMContentLoaded", () => {
                 const runId = e.target.getAttribute("data-id");
                 await downloadSingleRunData(runId);
             });
+        });
+
+        // Add event listeners for details toggle
+        document.querySelectorAll(".view-details-btn").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                const runId = e.target.getAttribute("data-id");
+                await toggleRunDetails(runId);
+            });
+        });
+    }
+
+    // 5. In-App Run Details (Splits & Charts)
+    async function toggleRunDetails(runId) {
+        const detailsDiv = document.getElementById(`details-${runId}`);
+
+        // If already open, just hide it
+        if (!detailsDiv.classList.contains("hidden")) {
+            detailsDiv.classList.add("hidden");
+            return;
+        }
+
+        // Show it
+        detailsDiv.classList.remove("hidden");
+
+        // If content is already rendered, just return
+        if (detailsDiv.innerHTML.trim() !== "") return;
+
+        detailsDiv.innerHTML = "<p style='text-align:center; padding: 1rem 0;'>載入圖表紀錄中... 🔄</p>";
+
+        const run = runsData.find(r => r.id.toString() === runId.toString());
+        const token = localStorage.getItem("strava_access_token");
+
+        try {
+            // Fetch splits (activity details)
+            const detailResp = await fetch(`https://www.strava.com/api/v3/activities/${runId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            let detailData = {};
+            if (detailResp.ok) detailData = await detailResp.json();
+
+            // Fetch streams (curves)
+            const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${runId}/streams/distance,heartrate,velocity_smooth?key_by_type=true`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            let streamData = {};
+            if (streamResp.ok) streamData = await streamResp.json();
+
+            renderRunDetailsHTML(detailsDiv, run, detailData, streamData);
+        } catch (err) {
+            console.error(err);
+            detailsDiv.innerHTML = "<p style='color:red; text-align:center;'>載入失敗，可能有 API 限制或網路錯誤 🤔</p>";
+        }
+    }
+
+    function renderRunDetailsHTML(container, run, detailData, streamData) {
+        let html = "";
+
+        // 1. Splits Table
+        if (detailData.splits_metric && detailData.splits_metric.length > 0) {
+            html += `<h4 style="margin: 1rem 0 0.5rem; color: #bfdbfe;">📍 逐公里分段速度 (Splits)</h4>
+            <table class="splits-table">
+                <thead><tr><th>公里</th><th>配速</th><th>心率 (bpm)</th><th>爬升 (m)</th></tr></thead>
+                <tbody>`;
+
+            detailData.splits_metric.forEach(split => {
+                if (split.distance < 100 && split.split > run.distance_km) return;
+
+                const spd = parseFloat(split.average_speed);
+                const paceStr = spd > 0 ? (1000 / 60 / spd).toFixed(2).replace('.', '\'') : "0'00";
+                const splitHr = split.average_heartrate ? `${Math.round(split.average_heartrate)}` : '--';
+                const splitElev = split.elevation_difference ? `${split.elevation_difference}` : '0';
+
+                html += `<tr>
+                    <td>${split.split}</td>
+                    <td>${paceStr}</td>
+                    <td>${splitHr}</td>
+                    <td>${splitElev}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+
+        // 2. Chart container
+        if (streamData && streamData.distance && (streamData.heartrate || streamData.velocity_smooth)) {
+            html += `<h4 style="margin: 1.5rem 0 0.5rem; color: #bfdbfe;">📈 心率與配速曲線</h4>
+            <div class="chart-container">
+                <canvas id="chart-canvas-${run.id}"></canvas>
+            </div>`;
+        }
+
+        if (html === "") {
+            html = "<p style='text-align:center;'>此筆紀錄沒有詳細的分段或心率曲線。可能是在室內或未帶感測器。</p>";
+        }
+
+        container.innerHTML = html;
+
+        // Render Chart if possible
+        if (streamData && streamData.distance && (streamData.heartrate || streamData.velocity_smooth)) {
+            renderChart(run.id, streamData);
+        }
+    }
+
+    function renderChart(runId, streamData) {
+        const canvas = document.getElementById(`chart-canvas-${runId}`);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const labels = streamData.distance.data.map(d => (d / 1000).toFixed(2));
+        const datasets = [];
+
+        if (streamData.heartrate) {
+            datasets.push({
+                label: '心率 (bpm)',
+                data: streamData.heartrate.data,
+                borderColor: 'rgba(239, 68, 68, 0.8)',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                yAxisID: 'y',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3
+            });
+        }
+
+        if (streamData.velocity_smooth) {
+            const paceData = streamData.velocity_smooth.data.map(speed => {
+                if (speed < 0.5) return null; // Avoid inf
+                return 1000 / (60 * speed);
+            });
+
+            datasets.push({
+                label: '配速 (分/公里)',
+                data: paceData,
+                borderColor: 'rgba(59, 130, 246, 0.8)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                yAxisID: 'y1',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                spanGaps: true
+            });
+        }
+
+        new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        ticks: { maxTicksLimit: 10, color: '#94a3b8' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y: {
+                        type: 'linear', display: true, position: 'left',
+                        title: { display: true, text: '心率 (bpm)', color: '#ef4444' },
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y1: {
+                        type: 'linear', display: true, position: 'right',
+                        reverse: true, // HIGHER visually means LOWER numerical pace (faster)
+                        title: { display: true, text: '配速 (分/公里)', color: '#3b82f6' },
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#94a3b8' }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e2e8f0' } },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                let label = context.dataset.label || '';
+                                if (label) label += ': ';
+                                if (context.parsed.y !== null) {
+                                    if (context.dataset.yAxisID === 'y1') {
+                                        const mins = Math.floor(context.parsed.y);
+                                        const secs = Math.round((context.parsed.y - mins) * 60);
+                                        label += mins + "'" + secs.toString().padStart(2, '0');
+                                    } else {
+                                        label += Math.round(context.parsed.y);
+                                    }
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
         });
     }
 
