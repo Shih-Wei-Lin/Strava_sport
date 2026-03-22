@@ -20,9 +20,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const copyBtn = document.getElementById("copy-btn");
     const copyToast = document.getElementById("copy-toast");
 
-    const exportJsonBtn = document.getElementById("export-json-btn");
-    const exportToast = document.getElementById("export-toast");
-
     let runsData = []; // Store fetched runs
 
     // 1. App Initialization & Routing
@@ -182,7 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const card = document.createElement("div");
             card.className = "run-card";
             card.innerHTML = `
-                <div class="run-info">
+                <div class="run-info" style="flex: 1;">
                     <h3>${run.name}</h3>
                     <div class="run-metrics">
                         <div class="metric">🏃‍♂️ <span>${run.distance_km}</span> km</div>
@@ -191,12 +188,100 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="metric">📈 <span>${run.total_elevation_gain_m || 0}</span> m</div>
                     </div>
                 </div>
-                <div class="run-pace">
+                <div class="run-pace" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.5rem;">
                     <div class="metric">配速: <span>${pace}</span> /km</div>
+                    <button class="btn download-run-btn" data-id="${run.id}" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: rgba(192, 132, 252, 0.2); border: 1px solid #c084fc; color: #e9d5ff;">📥 原始感測資料</button>
+                    <div class="download-status" id="dl-status-${run.id}" style="font-size: 0.8rem; color: #4ade80; display: none;">打包中..</div>
                 </div>
             `;
             runsList.appendChild(card);
         });
+
+        // Add event listeners for individual download buttons
+        document.querySelectorAll(".download-run-btn").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                const runId = e.target.getAttribute("data-id");
+                await downloadSingleRunData(runId);
+            });
+        });
+    }
+
+    // Individual Run Data Export
+    async function downloadSingleRunData(runId) {
+        const run = runsData.find(r => r.id.toString() === runId.toString());
+        if (!run) return;
+
+        const downloadBtn = document.querySelector(`.download-run-btn[data-id="${runId}"]`);
+        const statusText = document.getElementById(`dl-status-${runId}`);
+
+        downloadBtn.style.display = "none";
+        statusText.style.display = "block";
+
+        const token = localStorage.getItem("strava_access_token");
+
+        const exportData = {
+            activity_id: run.id,
+            name: run.name,
+            summary: {
+                distance_km: parseFloat(run.distance_km),
+                moving_time_minutes: parseFloat(run.moving_time_minutes),
+                average_heartrate: run.average_heartrate || null,
+                average_speed_m_s: run.average_speed_m_s,
+                total_elevation_gain_m: run.total_elevation_gain_m || 0
+            },
+            streams: {}
+        };
+
+        try {
+            // Fetch high-resolution streams
+            const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}/streams/time,distance,heartrate,velocity_smooth,altitude,cadence?key_by_type=true`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (streamResp.ok) {
+                const streamData = await streamResp.json();
+
+                if (streamData.time) exportData.streams.time_seconds = streamData.time.data;
+                if (streamData.distance) exportData.streams.distance_meters = streamData.distance.data;
+                if (streamData.heartrate) exportData.streams.heartrate_bpm = streamData.heartrate.data;
+                if (streamData.velocity_smooth) exportData.streams.velocity_m_s = streamData.velocity_smooth.data;
+                if (streamData.altitude) exportData.streams.altitude_meters = streamData.altitude.data;
+                if (streamData.cadence) exportData.streams.cadence_spm = streamData.cadence.data;
+            } else {
+                statusText.innerText = "❌ 抓取失敗";
+                statusText.style.color = "#ef4444";
+                setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
+                return;
+            }
+        } catch (err) {
+            console.warn("Failed to fetch stream data for run", run.id, err);
+            statusText.innerText = "❌ 網路錯誤";
+            statusText.style.color = "#ef4444";
+            setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
+            return;
+        }
+
+        statusText.innerText = "✅ 完成！";
+
+        // Create Blob and Download
+        const jsonString = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        // Clean up the name for file systems
+        const safeName = run.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `strava_${safeName}_${run.id}.json`;
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            statusText.style.display = "none";
+            downloadBtn.style.display = "block";
+        }, 2000);
     }
 
     // 5. Prompt Generation
@@ -283,87 +368,82 @@ document.addEventListener("DOMContentLoaded", () => {
     openaiBtn.addEventListener("click", () => generateCoachPrompt("openai"));
     geminiBtn.addEventListener("click", () => generateCoachPrompt("gemini"));
 
-    // 6. DB Export (Stream Data for GPT Advanced Data Analysis)
-    exportJsonBtn.addEventListener("click", async () => {
-        if (runsData.length === 0) {
-            alert("目前沒有跑步紀錄可供匯出。");
+    // 6. DB Export (Stream Data for Individual DB Export)
+    async function downloadSingleRunData(runId) {
+        const run = runsData.find(r => r.id.toString() === runId.toString());
+        if (!run) return;
+
+        const downloadBtn = document.querySelector(`.download-run-btn[data-id="${runId}"]`);
+        const statusText = document.getElementById(`dl-status-${runId}`);
+
+        downloadBtn.style.display = "none";
+        statusText.style.display = "block";
+
+        const token = localStorage.getItem("strava_access_token");
+
+        const exportData = {
+            activity_id: run.id,
+            name: run.name,
+            summary: {
+                distance_km: parseFloat(run.distance_km),
+                moving_time_minutes: parseFloat(run.moving_time_minutes),
+                average_heartrate: run.average_heartrate || null,
+                average_speed_m_s: run.average_speed_m_s,
+                total_elevation_gain_m: run.total_elevation_gain_m || 0
+            },
+            streams: {}
+        };
+
+        try {
+            // Fetch high-resolution streams
+            const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}/streams/time,distance,heartrate,velocity_smooth,altitude,cadence?key_by_type=true`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (streamResp.ok) {
+                const streamData = await streamResp.json();
+
+                if (streamData.time) exportData.streams.time_seconds = streamData.time.data;
+                if (streamData.distance) exportData.streams.distance_meters = streamData.distance.data;
+                if (streamData.heartrate) exportData.streams.heartrate_bpm = streamData.heartrate.data;
+                if (streamData.velocity_smooth) exportData.streams.velocity_m_s = streamData.velocity_smooth.data;
+                if (streamData.altitude) exportData.streams.altitude_meters = streamData.altitude.data;
+                if (streamData.cadence) exportData.streams.cadence_spm = streamData.cadence.data;
+            } else {
+                statusText.innerText = "❌ 失敗";
+                statusText.style.color = "#ef4444";
+                setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
+                return;
+            }
+        } catch (err) {
+            console.warn("Failed to fetch stream data for run", run.id, err);
+            statusText.innerText = "❌ 錯誤";
+            statusText.style.color = "#ef4444";
+            setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
             return;
         }
 
-        exportJsonBtn.disabled = true;
-        exportToast.style.display = "block";
-        exportToast.style.color = "#94a3b8";
-        exportToast.innerText = "正在向 Strava 打包秒級曲線數據中...請不要關閉網頁...";
-
-        const token = localStorage.getItem("strava_access_token");
-        const fullDatabase = [];
-
-        // Fetch streams for maximum 10 recent runs to prevent huge files or hitting rate limits quickly
-        const runsToExport = runsData.slice(0, 10);
-
-        for (let i = 0; i < runsToExport.length; i++) {
-            const run = runsToExport[i];
-            exportToast.innerText = `正在下載第 ${i + 1}/${runsToExport.length} 筆訓練的原始感測器數據...`;
-
-            const runEntry = {
-                activity_id: run.id,
-                name: run.name,
-                summary: {
-                    distance_km: parseFloat(run.distance_km),
-                    moving_time_minutes: parseFloat(run.moving_time_minutes),
-                    average_heartrate: run.average_heartrate || null,
-                    average_speed_m_s: run.average_speed_m_s,
-                    total_elevation_gain_m: run.total_elevation_gain_m || 0
-                },
-                streams: {}
-            };
-
-            try {
-                // Fetch high-resolution streams
-                const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}/streams/time,distance,heartrate,velocity_smooth,altitude,cadence?key_by_type=true`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (streamResp.ok) {
-                    const streamData = await streamResp.json();
-
-                    // Format object for GPT to easily consume
-                    if (streamData.time) runEntry.streams.time_seconds = streamData.time.data;
-                    if (streamData.distance) runEntry.streams.distance_meters = streamData.distance.data;
-                    if (streamData.heartrate) runEntry.streams.heartrate_bpm = streamData.heartrate.data;
-                    if (streamData.velocity_smooth) runEntry.streams.velocity_m_s = streamData.velocity_smooth.data;
-                    if (streamData.altitude) runEntry.streams.altitude_meters = streamData.altitude.data;
-                    if (streamData.cadence) runEntry.streams.cadence_spm = streamData.cadence.data;
-                }
-            } catch (err) {
-                console.warn("Failed to fetch stream data for run", run.id, err);
-            }
-
-            fullDatabase.push(runEntry);
-        }
-
-        exportToast.innerText = "✅ 打包完成！即將開始下載...";
-        exportToast.style.color = "#4ade80";
+        statusText.innerText = "✅ 成功";
 
         // Create Blob and Download
-        const jsonString = JSON.stringify(fullDatabase, null, 2);
+        const jsonString = JSON.stringify(exportData, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const url = URL.createObjectURL(blob);
 
         const a = document.createElement("a");
         a.href = url;
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-        a.download = `strava_training_database_${dateStr}.json`;
+        const safeName = run.name.replace(/[^a-z0-9\u4e00-\u9fa5]/gi, '_').toLowerCase();
+        a.download = `strava_${safeName}_${run.id}.json`;
         document.body.appendChild(a);
         a.click();
 
         setTimeout(() => {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            exportJsonBtn.disabled = false;
-            exportToast.style.display = "none";
-        }, 3000);
-    });
+            statusText.style.display = "none";
+            downloadBtn.style.display = "block";
+        }, 2000);
+    }
 
     initApp();
 });
