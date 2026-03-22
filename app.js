@@ -1,8 +1,12 @@
 import {
+    buildAbilityPrediction,
+    calculateBestSegmentEffort,
+    formatDeltaPace,
     formatDistance,
     formatDuration,
     formatPaceFromSeconds,
     formatPaceFromSpeed,
+    mergeBestEffort,
     summariseActivities,
 } from "./analytics.js";
 
@@ -21,6 +25,7 @@ const state = {
     detailCache: new Map(),
     runCharts: new Map(),
     weeklyChart: null,
+    enrichmentRunId: 0,
 };
 
 const ui = {};
@@ -59,12 +64,23 @@ function bindUi() {
     ui.pb5kDate = document.getElementById("pb-5k-date");
     ui.pb10k = document.getElementById("pb-10k");
     ui.pb10kDate = document.getElementById("pb-10k-date");
+
     ui.trainingHeadline = document.getElementById("training-headline");
     ui.trainingSummary = document.getElementById("training-summary");
     ui.recentLoad = document.getElementById("recent-load");
     ui.longestRun = document.getElementById("longest-run");
     ui.paceDelta = document.getElementById("pace-delta");
     ui.consistencyScore = document.getElementById("consistency-score");
+
+    ui.abilityModel = document.getElementById("ability-model");
+    ui.abilityScore = document.getElementById("ability-score");
+    ui.predictionSource = document.getElementById("prediction-source");
+    ui.pred5k = document.getElementById("pred-5k");
+    ui.pred10k = document.getElementById("pred-10k");
+    ui.predHalf = document.getElementById("pred-half");
+    ui.predMarathon = document.getElementById("pred-marathon");
+    ui.predictionNote = document.getElementById("prediction-note");
+
     ui.runsCount = document.getElementById("runs-count");
     ui.runsList = document.getElementById("runs-list");
     ui.weeklyChartCanvas = document.getElementById("weekly-chart");
@@ -252,10 +268,8 @@ function saveTokenData(payload) {
     localStorage.setItem(STORAGE_KEYS.expiresAt, String(payload.expires_at));
 
     if (payload.athlete?.firstname) {
-        localStorage.setItem(
-            STORAGE_KEYS.athleteName,
-            `${payload.athlete.firstname}${payload.athlete.lastname ? ` ${payload.athlete.lastname}` : ""}`,
-        );
+        const athleteName = `${payload.athlete.firstname}${payload.athlete.lastname ? ` ${payload.athlete.lastname}` : ""}`;
+        localStorage.setItem(STORAGE_KEYS.athleteName, athleteName);
     }
 }
 
@@ -275,7 +289,7 @@ function startStravaLogin() {
         return;
     }
 
-    const stateValue = createOAuthState();
+    const stateValue = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     localStorage.setItem(STORAGE_KEYS.authState, stateValue);
 
     const loginUrl = new URL("https://www.strava.com/oauth/authorize");
@@ -287,10 +301,6 @@ function startStravaLogin() {
     loginUrl.searchParams.set("state", stateValue);
 
     window.location.href = loginUrl.toString();
-}
-
-function createOAuthState() {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 async function exchangeCodeForToken(code, incomingState) {
@@ -340,6 +350,7 @@ async function ensureValidToken() {
             grant_type: "refresh_token",
             refresh_token: tokenData.refreshToken,
         });
+
         saveTokenData(payload);
         return payload.access_token;
     } catch (error) {
@@ -375,6 +386,7 @@ async function loadDashboard() {
 
     showDashboardState();
     clearStatus();
+    renderEmptyDashboard();
     ui.runsList.innerHTML = '<p class="empty-state">正在載入跑步資料...</p>';
     ui.runsCount.textContent = "載入中";
 
@@ -383,13 +395,17 @@ async function loadDashboard() {
         state.summary = summariseActivities(activities, new Date());
         renderDashboard(state.summary);
 
+        const athleteName = localStorage.getItem(STORAGE_KEYS.athleteName);
+        const prefix = athleteName ? `${athleteName}，` : "";
+
         if (state.summary.runs.length === 0) {
             setStatus("已連接 Strava，但目前沒有找到跑步活動資料。", "info");
-        } else {
-            const athleteName = localStorage.getItem(STORAGE_KEYS.athleteName);
-            const prefix = athleteName ? `${athleteName}，` : "";
-            setStatus(`${prefix}已載入 ${state.summary.runs.length} 筆跑步活動。`, "success");
+            return;
         }
+
+        setStatus(`${prefix}已載入 ${state.summary.runs.length} 筆跑步活動。`, "success");
+        const enrichmentRunId = ++state.enrichmentRunId;
+        void enrichPerformanceInsights(enrichmentRunId);
     } catch (error) {
         console.error(error);
         showAuthState();
@@ -403,9 +419,7 @@ async function fetchRunActivities(token) {
 
     for (let page = 1; page <= 4; page += 1) {
         const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
+            headers: { Authorization: `Bearer ${token}` },
         });
 
         if (response.status === 401) {
@@ -434,8 +448,17 @@ async function fetchRunActivities(token) {
 function renderDashboard(summary) {
     renderTopStats(summary);
     renderInsight(summary);
+    renderPrediction(summary);
     renderWeeklyChart(summary.weeklyTrend);
     renderRuns(summary.runs);
+}
+
+function getDisplayBestEffort(summary, target) {
+    if (target === "5K") {
+        return summary.bests.segment5k || summary.bests.fullRun5k;
+    }
+
+    return summary.bests.segment10k || summary.bests.fullRun10k;
 }
 
 function renderTopStats(summary) {
@@ -450,19 +473,20 @@ function renderTopStats(summary) {
         summary.totals.recentAverageHr == null ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`;
     ui.recentHrNote.textContent = "最近 4 次活動";
 
-    renderBestEffort(ui.pb5k, ui.pb5kDate, summary.bests.run5k, "尚無接近 5K 的活動");
-    renderBestEffort(ui.pb10k, ui.pb10kDate, summary.bests.run10k, "尚無接近 10K 的活動");
+    renderBestEffort(ui.pb5k, ui.pb5kDate, getDisplayBestEffort(summary, "5K"), "尚未找到可用的 5K 區段");
+    renderBestEffort(ui.pb10k, ui.pb10kDate, getDisplayBestEffort(summary, "10K"), "尚未找到可用的 10K 區段");
 }
 
-function renderBestEffort(valueNode, subtextNode, run, emptyText) {
-    if (!run) {
+function renderBestEffort(valueNode, subtextNode, effort, emptyText) {
+    if (!effort) {
         valueNode.textContent = "--";
         subtextNode.textContent = emptyText;
         return;
     }
 
-    valueNode.textContent = formatDuration(run.movingTimeSec);
-    subtextNode.textContent = `${run.dateLabel} · ${formatPaceFromSeconds(run.averagePaceSec)}`;
+    valueNode.textContent = formatDuration(effort.movingTimeSec);
+    const rangeText = effort.source === "segment" ? ` · ${effort.splitRangeLabel}` : "";
+    subtextNode.textContent = `${effort.dateLabel}${rangeText} · ${formatPaceFromSeconds(effort.averagePaceSec)}`;
 }
 
 function renderInsight(summary) {
@@ -470,11 +494,112 @@ function renderInsight(summary) {
     ui.trainingSummary.textContent = summary.insight.summary;
     ui.recentLoad.textContent = formatDistance(summary.totals.recentSevenDayDistanceKm);
     ui.longestRun.textContent = formatDistance(summary.totals.longestRunKm);
-    ui.paceDelta.textContent =
-        summary.insight.paceDeltaSec == null
-            ? "--"
-            : `${summary.insight.paceDeltaSec > 0 ? "+" : ""}${summary.insight.paceDeltaSec} 秒/km`;
+    ui.paceDelta.textContent = formatDeltaPace(summary.insight.paceDeltaSec);
     ui.consistencyScore.textContent = summary.totals.consistencyScore;
+}
+
+function renderPrediction(summary) {
+    const prediction = summary.prediction;
+    if (!prediction) {
+        ui.abilityModel.textContent = "VDOT";
+        ui.abilityScore.textContent = "--";
+        ui.predictionSource.textContent = "需要至少一筆 3K 以上的有效跑步資料";
+        ui.pred5k.textContent = "--";
+        ui.pred10k.textContent = "--";
+        ui.predHalf.textContent = "--";
+        ui.predMarathon.textContent = "--";
+        ui.predictionNote.textContent = "目前資料不足，還無法估計等效成績。";
+        return;
+    }
+
+    ui.abilityModel.textContent = prediction.model;
+    ui.abilityScore.textContent = prediction.vdot.toFixed(1);
+
+    const anchor = prediction.anchor;
+    const sourceKind = anchor.source === "segment" ? `連續區段 ${anchor.splitRangeLabel}` : "整筆活動";
+    ui.predictionSource.textContent = `${anchor.dateLabel} · ${anchor.name} · ${sourceKind}`;
+    ui.pred5k.textContent = prediction.predictions["5K"].vdotTimeLabel;
+    ui.pred10k.textContent = prediction.predictions["10K"].vdotTimeLabel;
+    ui.predHalf.textContent = prediction.predictions.Half.vdotTimeLabel;
+    ui.predMarathon.textContent = prediction.predictions.Marathon.vdotTimeLabel;
+    ui.predictionNote.textContent = `${prediction.caution} Riegel 全馬外推約 ${prediction.predictions.Marathon.riegelTimeLabel}。`;
+}
+
+async function enrichPerformanceInsights(enrichmentRunId) {
+    if (!state.summary) {
+        return;
+    }
+
+    const candidateRuns = state.summary.runs
+        .filter((run) => run.distanceKm >= 5 && run.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
+        .slice(0, 40);
+
+    if (candidateRuns.length === 0) {
+        return;
+    }
+
+    setStatus(`已載入 ${state.summary.runs.length} 筆活動，正在分析最近 ${candidateRuns.length} 筆活動的連續 5K / 10K 區段...`, "info");
+
+    const batchSize = 4;
+
+    for (let start = 0; start < candidateRuns.length; start += batchSize) {
+        if (enrichmentRunId !== state.enrichmentRunId) {
+            return;
+        }
+
+        const batch = candidateRuns.slice(start, start + batchSize);
+        const bundles = await Promise.all(
+            batch.map(async (run) => {
+                try {
+                    if (state.detailCache.has(run.id)) {
+                        return { run, bundle: state.detailCache.get(run.id) };
+                    }
+
+                    const bundle = await fetchRunDetailBundle(run.id);
+                    state.detailCache.set(run.id, bundle);
+                    return { run, bundle };
+                } catch (error) {
+                    console.warn("Failed to enrich run details", run.id, error);
+                    return { run, bundle: null };
+                }
+            }),
+        );
+
+        bundles.forEach(({ run, bundle }) => {
+            const splits = bundle?.detail?.splits_metric;
+            if (!Array.isArray(splits) || splits.length === 0) {
+                return;
+            }
+
+            const segment5k = calculateBestSegmentEffort(run, splits, 5);
+            const segment10k = calculateBestSegmentEffort(run, splits, 10);
+            state.summary.bests.segment5k = mergeBestEffort(state.summary.bests.segment5k, segment5k);
+            state.summary.bests.segment10k = mergeBestEffort(state.summary.bests.segment10k, segment10k);
+        });
+
+        state.summary.prediction = recomputePrediction(state.summary);
+        renderTopStats(state.summary);
+        renderPrediction(state.summary);
+    }
+
+    if (enrichmentRunId === state.enrichmentRunId) {
+        setStatus("已完成連續 5K / 10K 區段分析，成績預測已更新。", "success");
+    }
+}
+
+function recomputePrediction(summary) {
+    const recentFullEfforts = summary.runs
+        .filter((run) => run.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
+        .filter((run) => run.distanceKm >= 3 && run.distanceKm <= 21.1)
+        .slice(0, 16);
+
+    return buildAbilityPrediction([
+        summary.bests.segment5k,
+        summary.bests.segment10k,
+        summary.bests.fullRun5k,
+        summary.bests.fullRun10k,
+        ...recentFullEfforts,
+    ]);
 }
 
 function renderWeeklyChart(weeklyTrend) {
@@ -679,6 +804,17 @@ function renderRunDetail(container, runId, bundle) {
     const sufferScore = detail.suffer_score == null ? "--" : String(detail.suffer_score);
     const chartId = `run-chart-${runId}`;
 
+    const best5k = calculateBestSegmentEffort(
+        {
+            id: runId,
+            name: detail.name || "未命名跑步",
+            dateLabel: detail.start_date_local ? new Date(detail.start_date_local).toLocaleDateString("zh-TW") : "未知日期",
+            startedAt: new Date(detail.start_date_local || Date.now()),
+        },
+        splits,
+        5,
+    );
+
     let splitsHtml = '<p class="detail-copy">這筆活動沒有每公里 splits 資料。</p>';
     if (splits.length > 0) {
         const rows = splits
@@ -730,6 +866,10 @@ function renderRunDetail(container, runId, bundle) {
                 <div class="detail-title">Suffer Score</div>
                 <p class="detail-copy">${sufferScore}</p>
             </div>
+        </div>
+        <div class="detail-card">
+            <div class="detail-title">活動內最佳 5K 區段</div>
+            <p class="detail-copy">${best5k ? `${best5k.movingTimeLabel} · ${best5k.splitRangeLabel} · ${best5k.averagePaceLabel}` : "這筆活動無法估算完整 5K 區段"}</p>
         </div>
         <div>
             <div class="detail-title">分段分析</div>
@@ -783,6 +923,7 @@ function renderRunChart(canvasId, streams) {
                 if (!speed || speed <= 0.3) {
                     return null;
                 }
+
                 return Number((1000 / speed / 60).toFixed(2));
             }),
             borderColor: "rgba(94, 234, 212, 0.92)",
@@ -906,7 +1047,7 @@ async function generateCoachPrompt(provider) {
 
     ui.promptContainer.classList.remove("hidden");
     ui.copyToast.classList.add("hidden");
-    ui.coachPrompt.value = "正在整理近期重點課表與分段資料...";
+    ui.coachPrompt.value = "正在整理近期重點課表與能力預測...";
 
     try {
         const highlightedRuns = state.summary.runs.slice(0, 3);
@@ -931,12 +1072,14 @@ async function generateCoachPrompt(provider) {
 }
 
 function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
-    const pb5k = summary.bests.run5k
-        ? `${formatDuration(summary.bests.run5k.movingTimeSec)} (${summary.bests.run5k.dateLabel}, ${formatPaceFromSeconds(summary.bests.run5k.averagePaceSec)})`
-        : "目前沒有接近 5K 的活動";
-    const pb10k = summary.bests.run10k
-        ? `${formatDuration(summary.bests.run10k.movingTimeSec)} (${summary.bests.run10k.dateLabel}, ${formatPaceFromSeconds(summary.bests.run10k.averagePaceSec)})`
-        : "目前沒有接近 10K 的活動";
+    const best5k = getDisplayBestEffort(summary, "5K");
+    const best10k = getDisplayBestEffort(summary, "10K");
+    const pb5k = best5k
+        ? `${formatDuration(best5k.movingTimeSec)} (${best5k.dateLabel}${best5k.splitRangeLabel ? `, ${best5k.splitRangeLabel}` : ""}, ${formatPaceFromSeconds(best5k.averagePaceSec)})`
+        : "目前沒有可用的 5K 區段";
+    const pb10k = best10k
+        ? `${formatDuration(best10k.movingTimeSec)} (${best10k.dateLabel}${best10k.splitRangeLabel ? `, ${best10k.splitRangeLabel}` : ""}, ${formatPaceFromSeconds(best10k.averagePaceSec)})`
+        : "目前沒有可用的 10K 區段";
 
     let prompt = `你是我的 ${provider} 跑步教練，請用繁體中文分析以下 Strava 跑步資料。\n\n`;
     prompt += `整體摘要\n`;
@@ -945,18 +1088,30 @@ function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
     prompt += `- 最近 4 次平均配速：${formatPaceFromSeconds(summary.totals.recentAveragePaceSec)}\n`;
     prompt += `- 最近 4 次平均心率：${summary.totals.recentAverageHr == null ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`}\n`;
     prompt += `- 最近 7 天跑量：${formatDistance(summary.totals.recentSevenDayDistanceKm)}\n`;
-    prompt += `- 訓練穩定度：${summary.totals.consistencyScore}\n`;
     prompt += `- 最長距離：${formatDistance(summary.totals.longestRunKm)}\n`;
-    prompt += `- 5K 最佳：${pb5k}\n`;
-    prompt += `- 10K 最佳：${pb10k}\n`;
+    prompt += `- 同距離配速變化：${formatDeltaPace(summary.insight.paceDeltaSec)}\n`;
+    prompt += `- 訓練穩定度：${summary.totals.consistencyScore}\n`;
+    prompt += `- 最佳 5K 區段：${pb5k}\n`;
+    prompt += `- 最佳 10K 區段：${pb10k}\n`;
+
+    if (summary.prediction) {
+        prompt += `- 能力模型：${summary.prediction.model} VDOT ${summary.prediction.vdot.toFixed(1)}\n`;
+        prompt += `- 預估 5K：${summary.prediction.predictions["5K"].vdotTimeLabel}\n`;
+        prompt += `- 預估 10K：${summary.prediction.predictions["10K"].vdotTimeLabel}\n`;
+        prompt += `- 預估半馬：${summary.prediction.predictions.Half.vdotTimeLabel}\n`;
+        prompt += `- 預估全馬：${summary.prediction.predictions.Marathon.vdotTimeLabel}\n`;
+        prompt += `- 模型提醒：${summary.prediction.caution}\n`;
+    }
+
     prompt += `- 趨勢判讀：${summary.insight.headline}\n`;
     prompt += `- 趨勢摘要：${summary.insight.summary}\n\n`;
-
     prompt += `近期關鍵跑步\n`;
 
     highlightedRuns.forEach((run, index) => {
         const bundle = detailMap.get(run.id);
         const splits = bundle?.detail?.splits_metric || [];
+        const segment5k = calculateBestSegmentEffort(run, splits, 5);
+
         prompt += `${index + 1}. ${run.name}\n`;
         prompt += `   - 日期：${run.dateLabel}\n`;
         prompt += `   - 距離：${formatDistance(run.distanceKm)}\n`;
@@ -964,6 +1119,7 @@ function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
         prompt += `   - 平均配速：${run.averagePaceLabel}\n`;
         prompt += `   - 平均心率：${run.averageHeartrate == null ? "--" : `${run.averageHeartrate} bpm`}\n`;
         prompt += `   - 爬升：${Math.round(run.elevationGain)} m\n`;
+        prompt += `   - 活動內最佳 5K：${segment5k ? `${segment5k.movingTimeLabel} (${segment5k.splitRangeLabel}, ${segment5k.averagePaceLabel})` : "無法估算"}\n`;
 
         if (splits.length > 0) {
             prompt += `   - 每公里 splits：\n`;
@@ -976,10 +1132,11 @@ function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
     });
 
     prompt += `\n請直接輸出：\n`;
-    prompt += `1. 我目前的訓練狀態判讀。\n`;
-    prompt += `2. 從配速、心率、跑量變化看出的風險或進步點。\n`;
-    prompt += `3. 下週 3 次跑步安排，包含目的、距離或時間、配速建議。\n`;
-    prompt += `4. 若你認為我恢復不足，請直接指出原因。\n`;
+    prompt += `1. 我目前的跑步能力分析。\n`;
+    prompt += `2. 5K、10K、半馬、全馬預測成績是否合理，哪個距離最有把握。\n`;
+    prompt += `3. 從跑量、配速、心率與活動內最佳 5K 區段看出的進步點與風險。\n`;
+    prompt += `4. 接下來 7 天的 3 次課表安排，包含目的、距離或時間、配速建議。\n`;
+    prompt += `5. 如果你認為目前預測偏樂觀，也請直接指出原因。\n`;
 
     return prompt;
 }
@@ -1004,17 +1161,27 @@ function renderEmptyDashboard() {
     ui.weekMileage.textContent = "0.0 km";
     ui.weekCount.textContent = "0 次跑步";
     ui.recentPace.textContent = "--";
+    ui.recentPaceNote.textContent = "最近 4 次活動";
     ui.recentHr.textContent = "--";
+    ui.recentHrNote.textContent = "最近 4 次活動";
     ui.pb5k.textContent = "--";
     ui.pb5kDate.textContent = "尚無資料";
     ui.pb10k.textContent = "--";
     ui.pb10kDate.textContent = "尚無資料";
     ui.trainingHeadline.textContent = "等待資料載入";
-    ui.trainingSummary.textContent = "成功連接 Strava 後，這裡會整理你的近期負荷與節奏變化。";
+    ui.trainingSummary.textContent = "成功連接 Strava 後，這裡會整理你的近期負荷、同距離配速變化與能力預測。";
     ui.recentLoad.textContent = "0.0 km";
     ui.longestRun.textContent = "0.0 km";
     ui.paceDelta.textContent = "--";
     ui.consistencyScore.textContent = "--";
+    ui.abilityModel.textContent = "VDOT";
+    ui.abilityScore.textContent = "--";
+    ui.predictionSource.textContent = "等待資料分析";
+    ui.pred5k.textContent = "--";
+    ui.pred10k.textContent = "--";
+    ui.predHalf.textContent = "--";
+    ui.predMarathon.textContent = "--";
+    ui.predictionNote.textContent = "完成資料載入後，會根據最近的最佳表現估計能力。";
     ui.runsCount.textContent = "0 筆";
     ui.runsList.innerHTML = '<p class="empty-state">尚未載入活動資料。</p>';
     ui.promptContainer.classList.add("hidden");

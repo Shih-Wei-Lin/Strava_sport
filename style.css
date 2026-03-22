@@ -475,6 +475,37 @@ textarea {
     margin-top: 1rem;
 }
 
+.prediction-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.prediction-card {
+    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(153, 174, 190, 0.12);
+    display: grid;
+    gap: 0.3rem;
+}
+
+.prediction-card-wide {
+    grid-column: 1 / -1;
+}
+
+.prediction-value {
+    font-family: "Manrope", sans-serif;
+    font-size: 1.18rem;
+    color: var(--text);
+}
+
+.prediction-source {
+    font-size: 0.98rem;
+    line-height: 1.55;
+}
+
 .copy-toast {
     display: inline-flex;
     align-items: center;
@@ -521,7 +552,8 @@ textarea {
 
 @media (max-width: 719px) {
     .chip-grid,
-    .detail-grid {
+    .detail-grid,
+    .prediction-grid {
         grid-template-columns: 1fr;
     }
 

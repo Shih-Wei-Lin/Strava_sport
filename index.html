@@ -24,7 +24,7 @@
                 <p class="eyebrow">STRAVA PERFORMANCE STUDIO</p>
                 <h1>Stride Scope</h1>
                 <p class="hero-text">
-                    把 Strava 跑步資料整理成可讀的週期跑量、配速趨勢、心率負荷與 AI 訓練摘要。
+                    把 Strava 跑步資料整理成可讀的週期跑量、同距離配速變化、活動內最佳 5K/10K 區段與能力預測。
                 </p>
             </div>
             <div class="hero-actions">
@@ -75,9 +75,7 @@
             </div>
 
             <div class="auth-card">
-                <p class="auth-note">
-                    授權完成後會回到這個頁面並自動載入儀表板。
-                </p>
+                <p class="auth-note">授權完成後會回到這個頁面並自動載入儀表板。</p>
                 <div class="inline-actions">
                     <button id="login-btn" class="btn btn-primary" type="button">連接 Strava 帳號</button>
                     <button id="edit-settings-btn" class="btn btn-ghost" type="button">修改 API 設定</button>
@@ -108,12 +106,12 @@
                     <span id="recent-hr-note" class="stat-subtext">最近 4 次活動</span>
                 </article>
                 <article class="stat-card accent-card">
-                    <span class="stat-label">5K 最佳表現</span>
+                    <span class="stat-label">最佳 5K 區段</span>
                     <strong id="pb-5k" class="stat-value">--</strong>
                     <span id="pb-5k-date" class="stat-subtext">尚無資料</span>
                 </article>
                 <article class="stat-card accent-card">
-                    <span class="stat-label">10K 最佳表現</span>
+                    <span class="stat-label">最佳 10K 區段</span>
                     <strong id="pb-10k" class="stat-value">--</strong>
                     <span id="pb-10k-date" class="stat-subtext">尚無資料</span>
                 </article>
@@ -128,7 +126,7 @@
                         </div>
                     </div>
                     <p id="training-summary" class="analysis-copy">
-                        成功連接 Strava 後，這裡會整理你的近期負荷與節奏變化。
+                        成功連接 Strava 後，這裡會整理你的近期負荷、同距離配速變化與能力預測。
                     </p>
                     <div class="chip-grid">
                         <div class="insight-chip">
@@ -140,7 +138,7 @@
                             <strong id="longest-run">0.0 km</strong>
                         </div>
                         <div class="insight-chip">
-                            <span>配速變化</span>
+                            <span>同距離配速</span>
                             <strong id="pace-delta">--</strong>
                         </div>
                         <div class="insight-chip">
@@ -163,6 +161,49 @@
                 </article>
             </section>
 
+            <section class="panel prediction-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="section-kicker">PREDICTION</p>
+                        <h2>能力預測</h2>
+                    </div>
+                    <p class="section-description">
+                        以 VDOT 等效成績作為主模型，並用 Riegel 外推作為長距離參考。
+                    </p>
+                </div>
+                <div class="prediction-grid">
+                    <div class="prediction-card">
+                        <span class="metric-label">模型</span>
+                        <strong id="ability-model" class="prediction-value">VDOT</strong>
+                    </div>
+                    <div class="prediction-card">
+                        <span class="metric-label">能力分數</span>
+                        <strong id="ability-score" class="prediction-value">--</strong>
+                    </div>
+                    <div class="prediction-card prediction-card-wide">
+                        <span class="metric-label">基準表現</span>
+                        <strong id="prediction-source" class="prediction-value prediction-source">等待資料分析</strong>
+                    </div>
+                    <div class="prediction-card">
+                        <span class="metric-label">預估 5K</span>
+                        <strong id="pred-5k" class="prediction-value">--</strong>
+                    </div>
+                    <div class="prediction-card">
+                        <span class="metric-label">預估 10K</span>
+                        <strong id="pred-10k" class="prediction-value">--</strong>
+                    </div>
+                    <div class="prediction-card">
+                        <span class="metric-label">預估半馬</span>
+                        <strong id="pred-half" class="prediction-value">--</strong>
+                    </div>
+                    <div class="prediction-card">
+                        <span class="metric-label">預估全馬</span>
+                        <strong id="pred-marathon" class="prediction-value">--</strong>
+                    </div>
+                </div>
+                <p id="prediction-note" class="section-description">完成資料載入後，會根據最近的最佳表現估計能力。</p>
+            </section>
+
             <section class="panel runs-panel">
                 <div class="section-heading compact">
                     <div>
@@ -183,7 +224,7 @@
                         <h2>教練提示詞</h2>
                     </div>
                     <p class="section-description">
-                        整合週期跑量、近期關鍵課表與分段資料，方便直接丟給 ChatGPT 或 Gemini。
+                        整合週期跑量、最佳 5K/10K 區段、能力預測與近期課表，方便直接丟給 ChatGPT 或 Gemini。
                     </p>
                 </div>
 
