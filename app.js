@@ -56,24 +56,51 @@ document.addEventListener("DOMContentLoaded", () => {
             // Filter and extract
             const runs = activities.filter(act => act.type === "Run" || act.sport_type === "Run");
             
-            // Calculate PBs from the fetched list (based on average pace)
+            // Calculate PBs and Mileage
             personalBests = { run5k: null, run10k: null };
+            let monthMileage = 0;
+            let monthCount = 0;
+            let weekMileage = 0;
+            let weekCount = 0;
+
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
             
+            // Calculate start of this week (Monday)
+            const day = now.getDay();
+            const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+            const startOfWeek = new Date(now.setDate(diff));
+            startOfWeek.setHours(0, 0, 0, 0);
+
             runsData = runs.map(run => {
+                const runDate = new Date(run.start_date_local);
+                const distanceKm = run.distance / 1000;
+                
+                // Monthly stats
+                if (runDate >= startOfMonth) {
+                    monthMileage += distanceKm;
+                    monthCount++;
+                }
+                
+                // Weekly stats
+                if (runDate >= startOfWeek) {
+                    weekMileage += distanceKm;
+                    weekCount++;
+                }
+
                 const totalSeconds = run.moving_time;
                 const hours = Math.floor(totalSeconds / 3600);
                 const minutes = Math.floor((totalSeconds % 3600) / 60);
                 const timeStr = hours > 0 ? `${hours}小時${minutes}分` : `${minutes}分`;
-                const dateStr = new Date(run.start_date_local).toLocaleDateString('zh-TW', {
+                const dateStr = runDate.toLocaleDateString('zh-TW', {
                     month: 'long',
                     day: 'numeric',
                     weekday: 'short'
                 });
                 
-                const distanceKm = run.distance / 1000;
                 const paceSeconds = run.moving_time / distanceKm;
 
-                // Update 5k PB (closest to 5km and fastest pace)
+                // Update 5k PB
                 if (distanceKm >= 4.9 && distanceKm <= 5.5) {
                     if (!personalBests.run5k || paceSeconds < personalBests.run5k.paceSeconds) {
                         personalBests.run5k = { name: run.name, date: dateStr, paceSeconds, time: timeStr, distance: distanceKm.toFixed(2) };
@@ -99,10 +126,34 @@ document.addEventListener("DOMContentLoaded", () => {
                 };
             });
 
+            updateStatsDashboard(monthMileage, monthCount, weekMileage, weekCount);
             renderRuns(runsData);
         } catch (error) {
             console.error(error);
             runsList.innerHTML = `<p class="loading">❌ 載入失敗: ${error.message}</p>`;
+        }
+    }
+
+    function updateStatsDashboard(monthM, monthC, weekM, weekC) {
+        document.getElementById("month-mileage").innerText = monthM.toFixed(1);
+        document.getElementById("month-count").innerText = `${monthC} 次訓練`;
+        document.getElementById("week-mileage").innerText = weekM.toFixed(1);
+        document.getElementById("week-count").innerText = `${weekC} 次訓練`;
+
+        if (personalBests.run5k) {
+            const p = personalBests.run5k.paceSeconds;
+            const m = Math.floor(p / 60);
+            const s = Math.round(p % 60);
+            document.getElementById("pb-5k").innerText = `${m}'${s.toString().padStart(2, '0')}`;
+            document.getElementById("pb-5k-date").innerText = personalBests.run5k.date;
+        }
+
+        if (personalBests.run10k) {
+            const p = personalBests.run10k.paceSeconds;
+            const m = Math.floor(p / 60);
+            const s = Math.round(p % 60);
+            document.getElementById("pb-10k").innerText = `${m}'${s.toString().padStart(2, '0')}`;
+            document.getElementById("pb-10k-date").innerText = personalBests.run10k.date;
         }
     }
 
