@@ -20,6 +20,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const copyBtn = document.getElementById("copy-btn");
     const copyToast = document.getElementById("copy-toast");
 
+    const exportJsonBtn = document.getElementById("export-json-btn");
+    const exportToast = document.getElementById("export-toast");
+
     let runsData = []; // Store fetched runs
 
     // 1. App Initialization & Routing
@@ -279,6 +282,88 @@ document.addEventListener("DOMContentLoaded", () => {
 
     openaiBtn.addEventListener("click", () => generateCoachPrompt("openai"));
     geminiBtn.addEventListener("click", () => generateCoachPrompt("gemini"));
+
+    // 6. DB Export (Stream Data for GPT Advanced Data Analysis)
+    exportJsonBtn.addEventListener("click", async () => {
+        if (runsData.length === 0) {
+            alert("目前沒有跑步紀錄可供匯出。");
+            return;
+        }
+
+        exportJsonBtn.disabled = true;
+        exportToast.style.display = "block";
+        exportToast.style.color = "#94a3b8";
+        exportToast.innerText = "正在向 Strava 打包秒級曲線數據中...請不要關閉網頁...";
+
+        const token = localStorage.getItem("strava_access_token");
+        const fullDatabase = [];
+
+        // Fetch streams for maximum 10 recent runs to prevent huge files or hitting rate limits quickly
+        const runsToExport = runsData.slice(0, 10);
+
+        for (let i = 0; i < runsToExport.length; i++) {
+            const run = runsToExport[i];
+            exportToast.innerText = `正在下載第 ${i + 1}/${runsToExport.length} 筆訓練的原始感測器數據...`;
+
+            const runEntry = {
+                activity_id: run.id,
+                name: run.name,
+                summary: {
+                    distance_km: parseFloat(run.distance_km),
+                    moving_time_minutes: parseFloat(run.moving_time_minutes),
+                    average_heartrate: run.average_heartrate || null,
+                    average_speed_m_s: run.average_speed_m_s,
+                    total_elevation_gain_m: run.total_elevation_gain_m || 0
+                },
+                streams: {}
+            };
+
+            try {
+                // Fetch high-resolution streams
+                const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}/streams/time,distance,heartrate,velocity_smooth,altitude,cadence?key_by_type=true`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (streamResp.ok) {
+                    const streamData = await streamResp.json();
+
+                    // Format object for GPT to easily consume
+                    if (streamData.time) runEntry.streams.time_seconds = streamData.time.data;
+                    if (streamData.distance) runEntry.streams.distance_meters = streamData.distance.data;
+                    if (streamData.heartrate) runEntry.streams.heartrate_bpm = streamData.heartrate.data;
+                    if (streamData.velocity_smooth) runEntry.streams.velocity_m_s = streamData.velocity_smooth.data;
+                    if (streamData.altitude) runEntry.streams.altitude_meters = streamData.altitude.data;
+                    if (streamData.cadence) runEntry.streams.cadence_spm = streamData.cadence.data;
+                }
+            } catch (err) {
+                console.warn("Failed to fetch stream data for run", run.id, err);
+            }
+
+            fullDatabase.push(runEntry);
+        }
+
+        exportToast.innerText = "✅ 打包完成！即將開始下載...";
+        exportToast.style.color = "#4ade80";
+
+        // Create Blob and Download
+        const jsonString = JSON.stringify(fullDatabase, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        a.download = `strava_training_database_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            exportJsonBtn.disabled = false;
+            exportToast.style.display = "none";
+        }, 3000);
+    });
 
     initApp();
 });
