@@ -27,7 +27,10 @@ const state = {
     runCharts: new Map(),
     weeklyChart: null,
     enrichmentRunId: 0,
+    runsPage: 1,
 };
+
+const RUNS_PER_PAGE = 10;
 
 const ui = {};
 
@@ -84,6 +87,10 @@ function bindUi() {
 
     ui.runsCount = document.getElementById("runs-count");
     ui.runsList = document.getElementById("runs-list");
+    ui.runsPagination = document.getElementById("runs-pagination");
+    ui.runsPrevBtn = document.getElementById("runs-prev-btn");
+    ui.runsNextBtn = document.getElementById("runs-next-btn");
+    ui.runsPageInfo = document.getElementById("runs-page-info");
     ui.weeklyChartCanvas = document.getElementById("weekly-chart");
 
     ui.openAiBtn = document.getElementById("get-openai-btn");
@@ -104,6 +111,8 @@ function wireEvents() {
     ui.openAiBtn.addEventListener("click", () => generateCoachPrompt("ChatGPT"));
     ui.geminiBtn.addEventListener("click", () => generateCoachPrompt("Gemini"));
     ui.copyBtn.addEventListener("click", handleCopyPrompt);
+    ui.runsPrevBtn.addEventListener("click", () => changeRunsPage(-1));
+    ui.runsNextBtn.addEventListener("click", () => changeRunsPage(1));
 }
 
 async function initApp() {
@@ -447,6 +456,7 @@ async function fetchRunActivities(token) {
 }
 
 function renderDashboard(summary) {
+    state.runsPage = 1;
     renderTopStats(summary);
     renderInsight(summary);
     renderPrediction(summary);
@@ -664,15 +674,23 @@ function renderWeeklyChart(weeklyTrend) {
 }
 
 function renderRuns(runs) {
+    const totalPages = Math.max(1, Math.ceil(runs.length / RUNS_PER_PAGE));
+    if (state.runsPage > totalPages) {
+        state.runsPage = totalPages;
+    }
+
     ui.runsCount.textContent = `${runs.length} 筆`;
 
     if (runs.length === 0) {
         ui.runsList.innerHTML = '<p class="empty-state">找不到跑步活動，請確認 Strava 帳號中是否有 `Run` 類型資料。</p>';
+        ui.runsPagination.classList.add("hidden");
         return;
     }
 
+    const startIndex = (state.runsPage - 1) * RUNS_PER_PAGE;
+    const pageRuns = runs.slice(startIndex, startIndex + RUNS_PER_PAGE);
     const fragment = document.createDocumentFragment();
-    runs.slice(0, 16).forEach((run) => {
+    pageRuns.forEach((run) => {
         const card = document.createElement("article");
         card.className = "run-card";
 
@@ -720,6 +738,7 @@ function renderRuns(runs) {
 
     ui.runsList.innerHTML = "";
     ui.runsList.appendChild(fragment);
+    renderRunsPagination(runs.length, totalPages);
 
     ui.runsList.querySelectorAll(".js-toggle-details").forEach((button) => {
         button.addEventListener("click", async () => {
@@ -734,6 +753,35 @@ function renderRuns(runs) {
             await downloadRunJson(runId, button);
         });
     });
+}
+
+function renderRunsPagination(totalRuns, totalPages) {
+    if (totalRuns <= RUNS_PER_PAGE) {
+        ui.runsPagination.classList.add("hidden");
+        return;
+    }
+
+    ui.runsPagination.classList.remove("hidden");
+    ui.runsPageInfo.textContent = `第 ${state.runsPage} / ${totalPages} 頁`;
+    ui.runsPrevBtn.disabled = state.runsPage <= 1;
+    ui.runsNextBtn.disabled = state.runsPage >= totalPages;
+}
+
+function changeRunsPage(direction) {
+    if (!state.summary?.runs?.length) {
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(state.summary.runs.length / RUNS_PER_PAGE));
+    const nextPage = Math.min(totalPages, Math.max(1, state.runsPage + direction));
+
+    if (nextPage === state.runsPage) {
+        return;
+    }
+
+    state.runsPage = nextPage;
+    renderRuns(state.summary.runs);
+    ui.runsList.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function toggleRunDetails(runId, button) {
@@ -1185,6 +1233,10 @@ function renderEmptyDashboard() {
     ui.predictionNote.textContent = "完成資料載入後，會根據最近的最佳表現估計能力。";
     ui.runsCount.textContent = "0 筆";
     ui.runsList.innerHTML = '<p class="empty-state">尚未載入活動資料。</p>';
+    ui.runsPagination.classList.add("hidden");
+    ui.runsPageInfo.textContent = "第 1 / 1 頁";
+    ui.runsPrevBtn.disabled = true;
+    ui.runsNextBtn.disabled = true;
     ui.promptContainer.classList.add("hidden");
 
     if (state.weeklyChart) {

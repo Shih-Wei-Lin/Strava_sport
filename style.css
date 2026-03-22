@@ -353,6 +353,14 @@ textarea {
     gap: 0.9rem;
 }
 
+.pagination {
+    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
 .run-card {
     padding: 1.15rem;
     border-radius: var(--radius-lg);
