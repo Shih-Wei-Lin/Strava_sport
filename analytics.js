@@ -70,7 +70,7 @@ export function formatPaceFromSpeed(speedMetersPerSecond) {
 }
 
 export function formatShortDate(dateInput) {
-    const date = new Date(dateInput);
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
     if (Number.isNaN(date.getTime())) {
         return "未知日期";
     }
@@ -80,6 +80,31 @@ export function formatShortDate(dateInput) {
         day: "numeric",
         weekday: "short",
     });
+}
+
+export function parseStravaLocalDate(dateInput) {
+    if (!dateInput || typeof dateInput !== "string") {
+        return null;
+    }
+
+    const matched = dateInput.match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/,
+    );
+
+    if (!matched) {
+        const fallback = new Date(dateInput);
+        return Number.isNaN(fallback.getTime()) ? null : fallback;
+    }
+
+    const [, year, month, day, hour, minute, second = "0"] = matched;
+    return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+    );
 }
 
 export function formatDeltaPace(seconds) {
@@ -96,7 +121,9 @@ export function formatDeltaPace(seconds) {
 }
 
 export function normaliseActivity(activity) {
-    const startedAt = new Date(activity.start_date_local || activity.start_date || Date.now());
+    const startedAt =
+        parseStravaLocalDate(activity.start_date_local) ||
+        new Date(activity.start_date || Date.now());
     const distanceKm = toNumber(activity.distance) / 1000;
     const movingTimeSec = toNumber(activity.moving_time);
     const averageSpeed = toNumber(activity.average_speed, NaN);

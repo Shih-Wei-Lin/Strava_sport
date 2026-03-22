@@ -7,6 +7,7 @@ import {
     formatPaceFromSeconds,
     formatPaceFromSpeed,
     mergeBestEffort,
+    parseStravaLocalDate,
     summariseActivities,
 } from "./analytics.js";
 
@@ -808,8 +809,8 @@ function renderRunDetail(container, runId, bundle) {
         {
             id: runId,
             name: detail.name || "未命名跑步",
-            dateLabel: detail.start_date_local ? new Date(detail.start_date_local).toLocaleDateString("zh-TW") : "未知日期",
-            startedAt: new Date(detail.start_date_local || Date.now()),
+            dateLabel: detail.start_date_local ? formatTaiwanDate(detail.start_date_local) : "未知日期",
+            startedAt: parseStravaLocalDate(detail.start_date_local) || new Date(Date.now()),
         },
         splits,
         5,
@@ -1190,6 +1191,15 @@ function renderEmptyDashboard() {
         state.weeklyChart.destroy();
         state.weeklyChart = null;
     }
+}
+
+function formatTaiwanDate(dateInput) {
+    const date = parseStravaLocalDate(dateInput) || new Date(dateInput);
+    if (Number.isNaN(date.getTime())) {
+        return "未知日期";
+    }
+
+    return date.toLocaleDateString("zh-TW");
 }
 
 function escapeHtml(value) {

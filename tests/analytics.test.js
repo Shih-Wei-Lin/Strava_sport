@@ -6,6 +6,7 @@ import {
     calculateBestSegmentEffort,
     formatDeltaPace,
     formatPaceFromSeconds,
+    parseStravaLocalDate,
     startOfWeek,
     summariseActivities,
 } from "../analytics.js";
@@ -16,6 +17,15 @@ test("startOfWeek uses Monday as the first day", () => {
 
     assert.equal(start.getDay(), 1);
     assert.equal(start.getDate(), 16);
+});
+
+test("parseStravaLocalDate keeps Strava local evening runs on the same calendar day", () => {
+    const parsed = parseStravaLocalDate("2026-03-18T19:00:00Z");
+
+    assert.equal(parsed.getFullYear(), 2026);
+    assert.equal(parsed.getMonth(), 2);
+    assert.equal(parsed.getDate(), 18);
+    assert.equal(parsed.getHours(), 19);
 });
 
 test("summariseActivities calculates weekly and monthly totals", () => {
