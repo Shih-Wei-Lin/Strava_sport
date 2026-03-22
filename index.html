@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 馬拉松教練 - 你的智慧訓練夥伴</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-mesh"></div>
+    <div class="container">
+        <header>
+            <h1>🏃‍♂️ AI 馬拉松教練</h1>
+            <p>連接 Apple Watch 與 Strava，一鍵產生 ChatGPT 與 Gemini 分析指令</p>
+        </header>
+
+        <!-- 設定面板 (首次需要) -->
+        <main id="settings-section" class="glass-panel hidden">
+            <h2>⚙️ 首次設定 (Strava API Keys)</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.95rem;">
+                因本應用為純前端架構(無後端伺服器)，您的金鑰將安全地儲存在手機瀏覽器的本地空間(localStorage)中，絕不會外洩。</p>
+
+            <div class="form-group">
+                <label for="client-id">Strava Client ID</label>
+                <input type="text" id="client-id" placeholder="例如: 123456" />
+            </div>
+            <div class="form-group">
+                <label for="client-secret">Strava Client Secret</label>
+                <input type="password" id="client-secret" placeholder="輸入您的 Secret" />
+            </div>
+
+            <button id="save-settings-btn" class="btn primary-btn" style="width: 100%; margin-top: 1rem;">💾
+                儲存設定並準備登入</button>
+            <p id="settings-msg" style="margin-top: 1rem; text-align: center; color: #4ade80; display: none;"></p>
+        </main>
+
+        <!-- 登入區塊 -->
+        <main id="auth-section" class="glass-panel hidden" style="text-align: center; padding: 3rem 2rem;">
+            <p style="margin-bottom: 2rem;">已成功載入 API 設定，點擊下方按鈕連結您的 Strava 帳號：</p>
+            <button id="login-btn" class="btn primary-btn" style="font-size: 1.2rem; padding: 1rem 2rem;">🔗 使用 Strava
+                登入</button>
+            <div style="margin-top: 2rem;">
+                <button id="reset-settings-btn" class="btn"
+                    style="background: transparent; border: 1px solid var(--glass-border); color: var(--text-secondary);">清除
+                    API 設定</button>
+            </div>
+        </main>
+
+        <!-- 訓練數據與 Prompt 生成儀表板 -->
+        <main id="dashboard" class="hidden">
+            <section class="runs-section glass-panel">
+                <h2>📈 最近的訓練紀錄</h2>
+                <div id="runs-list" class="runs-container">
+                    <p class="loading">載入訓練資料中...</p>
+                </div>
+            </section>
+
+            <section class="coach-section glass-panel">
+                <h2>📋 任務提示詞生成器 (Prompt)</h2>
+                <p style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.95rem;">
+                    點擊下方按鈕，自動彙整您的近期跑步數據生成專屬 Prompt，複製後可直接貼到手機版 ChatGPT 或 Gemini App 中使用。</p>
+                <div class="ai-controls">
+                    <button id="get-openai-btn" class="btn ai-btn has-glow">🧠 產生 ChatGPT Prompt</button>
+                    <button id="get-gemini-btn" class="btn ai-btn has-glow">⚡ 產生 Gemini Prompt</button>
+                </div>
+                <div id="prompt-container" class="feedback-box hidden" style="position: relative;">
+                    <textarea id="coach-prompt" rows="8"
+                        style="width: 100%; width: -moz-available; width: -webkit-fill-available; background: transparent; color: white; border: none; resize: vertical; margin-bottom: 1rem; font-family: inherit; font-size: 1rem;"
+                        readonly></textarea>
+                    <button id="copy-btn" class="btn primary-btn"
+                        style="width: 100%; background: var(--accent-color);">📋 一鍵複製到剪貼簿</button>
+                    <div id="copy-toast" style="display: none; text-align: center; color: #4ade80; margin-top: 0.5rem;">
+                        ✅ 已複製！現在可以去開啟你的 AI App 囉</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
