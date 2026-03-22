@@ -149,6 +149,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Filter and extract
             const runs = activities.filter(act => act.type === "Run" || act.sport_type === "Run");
             runsData = runs.map(run => ({
+                id: run.id,
                 name: run.name,
                 distance_km: (run.distance / 1000).toFixed(2),
                 moving_time_minutes: (run.moving_time / 60).toFixed(2),
@@ -196,7 +197,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // 5. Prompt Generation
-    function generateCoachPrompt(model) {
+    async function generateCoachPrompt(model) {
         promptContainer.classList.remove("hidden");
         copyToast.style.display = "none";
         promptContainer.style.borderLeftColor = model === 'openai' ? 'var(--openai-color)' : 'var(--gemini-color)';
@@ -206,24 +207,66 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        coachPrompt.value = "正在向 Strava 獲取您每公里的詳細配速與心率曲線資料，請稍候...";
         const ai_name = model === 'openai' ? "ChatGPT" : "Gemini";
+        const token = localStorage.getItem("strava_access_token");
 
-        // Take top 5 runs max for prompt
-        let prompt = `你好 ${ai_name}，我希望你擔任我的專業馬拉松教練。以下是我最近透過 Strava 紀錄的訓練數據：\n\n`;
+        let prompt = `你好 ${ai_name}，我希望你擔任我的專業馬拉松教練。以下是我最近透過 Strava 紀錄的訓練數據。\n`;
+        prompt += `因為我需要進階的分析，我提供了「整體平均數據」與「每公里分段數據 (Splits)」，這代表了我在整趟訓練中的配速與心率變化曲線。\n\n`;
 
-        runsData.slice(0, 5).forEach(run => {
+        // Take top 3 runs max to avoid making prompt too huge for phone memory
+        const recentRuns = runsData.slice(0, 3);
+
+        for (const run of recentRuns) {
             const hr = run.average_heartrate || '未知';
             const elev = run.total_elevation_gain_m || 0;
-            prompt += `- 【${run.name}】: 距離 ${run.distance_km} km，移動時間 ${run.moving_time_minutes} 分鐘，平均心率 ${hr} bpm，總爬升 ${elev} 公尺。\n`;
-        });
+            const avgSpeed = parseFloat(run.average_speed_m_s);
+            const avgPace = avgSpeed > 0 ? (1000 / 60 / avgSpeed).toFixed(2).replace('.', '\'') : "0'00";
 
-        prompt += `\n請根據以上這些數據分析我的表現。給我一些具體的進步肯定，指出可以改善的地方，並給予我下一次訓練的建議（例如配速控制、心率區間或訓練課表調整）。請用繁體中文且帶有專業但鼓勵的語氣回答我。`;
+            prompt += `🏃‍♂️ 【${run.name}】\n`;
+            prompt += `整體表現：距離 ${run.distance_km} km，移動時間 ${run.moving_time_minutes} 分鐘，平均配速 ${avgPace}/km，平均心率 ${hr} bpm，總爬升 ${elev} 公尺。\n`;
+
+            // Fetch detailed activity for splits (curves)
+            try {
+                const detailResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (detailResp.ok) {
+                    const detailData = await detailResp.json();
+                    if (detailData.splits_metric && detailData.splits_metric.length > 0) {
+                        prompt += `📍 每公里分段變化 (曲線數據)：\n`;
+                        detailData.splits_metric.forEach(split => {
+                            // Don't log small remaining fractional kilometers if they are too short (e.g. 0.01km)
+                            if (split.distance < 100 && split.split > run.distance_km) return;
+
+                            const spd = parseFloat(split.average_speed);
+                            const paceStr = spd > 0 ? (1000 / 60 / spd).toFixed(2).replace('.', '\'') : "0'00";
+                            const splitHr = split.average_heartrate ? `${Math.round(split.average_heartrate)} bpm` : '未知';
+                            const splitElev = split.elevation_difference ? `${split.elevation_difference}m` : '0m';
+
+                            prompt += `  - 第 ${split.split} 公里: 配速 ${paceStr}/km, 心率 ${splitHr}, 爬升/下降 ${splitElev}\n`;
+                        });
+                    }
+                }
+            } catch (err) {
+                console.warn("Failed to fetch splits for run", run.id, err);
+            }
+            prompt += `\n`;
+        }
+
+        prompt += `👉 教練指令：\n`;
+        prompt += `請根據以上包含「分段曲線」的數據詳細分析我的表現。幫我看看：\n`;
+        prompt += `1. 我的配速策略是否穩定？前半段與後半段是否有掉速？\n`;
+        prompt += `2. 心率的發展曲線是否合理？是否在特定公里數飄高？\n`;
+        prompt += `3. 爬升路段對我的心率/配速造成的影響？\n`;
+        prompt += `幫我綜合評估後，給我下一次訓練的建議。請用繁體中文且帶有專業但鼓勵的語氣回答我。`;
 
         coachPrompt.value = prompt;
     }
 
     copyBtn.addEventListener("click", () => {
-        if (!coachPrompt.value || coachPrompt.value.includes("目前沒有找到")) {
+        if (!coachPrompt.value || coachPrompt.value.includes("目前沒有找到") || coachPrompt.value.includes("正在向")) {
             return;
         }
         navigator.clipboard.writeText(coachPrompt.value).then(() => {
