@@ -1,661 +1,1035 @@
-document.addEventListener("DOMContentLoaded", () => {
-    // DOM Elements
-    const settingsSection = document.getElementById("settings-section");
-    const authSection = document.getElementById("auth-section");
-    const dashboard = document.getElementById("dashboard");
-    const runsList = document.getElementById("runs-list");
+import {
+    formatDistance,
+    formatDuration,
+    formatPaceFromSeconds,
+    formatPaceFromSpeed,
+    summariseActivities,
+} from "./analytics.js";
 
-    const clientIdInput = document.getElementById("client-id");
-    const clientSecretInput = document.getElementById("client-secret");
-    const saveSettingsBtn = document.getElementById("save-settings-btn");
-    const settingsMsg = document.getElementById("settings-msg");
-    const resetSettingsBtn = document.getElementById("reset-settings-btn");
+const STORAGE_KEYS = {
+    clientId: "strava_client_id",
+    clientSecret: "strava_client_secret",
+    accessToken: "strava_access_token",
+    refreshToken: "strava_refresh_token",
+    expiresAt: "strava_expires_at",
+    athleteName: "strava_athlete_name",
+    authState: "strava_oauth_state",
+};
 
-    const loginBtn = document.getElementById("login-btn");
-    const openaiBtn = document.getElementById("get-openai-btn");
-    const geminiBtn = document.getElementById("get-gemini-btn");
+const state = {
+    summary: null,
+    detailCache: new Map(),
+    runCharts: new Map(),
+    weeklyChart: null,
+};
 
-    const promptContainer = document.getElementById("prompt-container");
-    const coachPrompt = document.getElementById("coach-prompt");
-    const copyBtn = document.getElementById("copy-btn");
-    const copyToast = document.getElementById("copy-toast");
+const ui = {};
 
-    let runsData = []; // Store fetched runs
-    let personalBests = { run5k: null, run10k: null };
+document.addEventListener("DOMContentLoaded", async () => {
+    bindUi();
+    wireEvents();
+    await initApp();
+});
 
-    // 1. App Initialization & Routing
-    async function initApp() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        // ... (rest of initApp logic)
+function bindUi() {
+    ui.statusBanner = document.getElementById("status-banner");
+    ui.setupSection = document.getElementById("setup-section");
+    ui.authSection = document.getElementById("auth-section");
+    ui.dashboard = document.getElementById("dashboard");
+
+    ui.clientIdInput = document.getElementById("client-id");
+    ui.clientSecretInput = document.getElementById("client-secret");
+    ui.saveSettingsBtn = document.getElementById("save-settings-btn");
+    ui.clearSettingsBtn = document.getElementById("clear-settings-btn");
+    ui.editSettingsBtn = document.getElementById("edit-settings-btn");
+
+    ui.loginBtn = document.getElementById("login-btn");
+    ui.refreshDataBtn = document.getElementById("refresh-data-btn");
+    ui.logoutBtn = document.getElementById("logout-btn");
+
+    ui.monthMileage = document.getElementById("month-mileage");
+    ui.monthCount = document.getElementById("month-count");
+    ui.weekMileage = document.getElementById("week-mileage");
+    ui.weekCount = document.getElementById("week-count");
+    ui.recentPace = document.getElementById("recent-pace");
+    ui.recentPaceNote = document.getElementById("recent-pace-note");
+    ui.recentHr = document.getElementById("recent-hr");
+    ui.recentHrNote = document.getElementById("recent-hr-note");
+    ui.pb5k = document.getElementById("pb-5k");
+    ui.pb5kDate = document.getElementById("pb-5k-date");
+    ui.pb10k = document.getElementById("pb-10k");
+    ui.pb10kDate = document.getElementById("pb-10k-date");
+    ui.trainingHeadline = document.getElementById("training-headline");
+    ui.trainingSummary = document.getElementById("training-summary");
+    ui.recentLoad = document.getElementById("recent-load");
+    ui.longestRun = document.getElementById("longest-run");
+    ui.paceDelta = document.getElementById("pace-delta");
+    ui.consistencyScore = document.getElementById("consistency-score");
+    ui.runsCount = document.getElementById("runs-count");
+    ui.runsList = document.getElementById("runs-list");
+    ui.weeklyChartCanvas = document.getElementById("weekly-chart");
+
+    ui.openAiBtn = document.getElementById("get-openai-btn");
+    ui.geminiBtn = document.getElementById("get-gemini-btn");
+    ui.promptContainer = document.getElementById("prompt-container");
+    ui.coachPrompt = document.getElementById("coach-prompt");
+    ui.copyBtn = document.getElementById("copy-btn");
+    ui.copyToast = document.getElementById("copy-toast");
+}
+
+function wireEvents() {
+    ui.saveSettingsBtn.addEventListener("click", handleSaveSettings);
+    ui.clearSettingsBtn.addEventListener("click", handleClearSettings);
+    ui.editSettingsBtn.addEventListener("click", () => showSetupState(true));
+    ui.loginBtn.addEventListener("click", startStravaLogin);
+    ui.refreshDataBtn.addEventListener("click", loadDashboard);
+    ui.logoutBtn.addEventListener("click", handleLogout);
+    ui.openAiBtn.addEventListener("click", () => generateCoachPrompt("ChatGPT"));
+    ui.geminiBtn.addEventListener("click", () => generateCoachPrompt("Gemini"));
+    ui.copyBtn.addEventListener("click", handleCopyPrompt);
+}
+
+async function initApp() {
+    hydrateSettingsInputs();
+    setActionState(false);
+
+    const url = new URL(window.location.href);
+    const authError = url.searchParams.get("error");
+    const authCode = url.searchParams.get("code");
+    const authState = url.searchParams.get("state");
+
+    if (authError) {
+        setStatus(`Strava 授權失敗：${authError}`, "error");
+        stripAuthParams();
     }
 
-    // ... (Settings and Login logic)
-
-    // 4. Fetch Data
-    async function loadRuns() {
-        const token = localStorage.getItem("strava_access_token");
+    if (authCode) {
         try {
-            // Increase per_page to 200 to get more history
-            const response = await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=200', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.status === 401) {
-                // Token likely expired. For simplicity, force re-login.
-                localStorage.removeItem("strava_access_token");
-                alert("登入已過期，請重新登入 Strava");
-                location.reload();
-                return;
-            }
-
-            if (!response.ok) throw new Error("Failed to fetch runs");
-
-            const activities = await response.json();
-
-            // Filter and extract
-            const runs = activities.filter(act => act.type === "Run" || act.sport_type === "Run");
-            
-            // Calculate PBs and Mileage
-            personalBests = { run5k: null, run10k: null };
-            let monthMileage = 0;
-            let monthCount = 0;
-            let weekMileage = 0;
-            let weekCount = 0;
-
-            const now = new Date();
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            
-            // Calculate start of this week (Monday)
-            const day = now.getDay();
-            const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-            const startOfWeek = new Date(now.setDate(diff));
-            startOfWeek.setHours(0, 0, 0, 0);
-
-            runsData = runs.map(run => {
-                const runDate = new Date(run.start_date_local);
-                const distanceKm = run.distance / 1000;
-                
-                // Monthly stats
-                if (runDate >= startOfMonth) {
-                    monthMileage += distanceKm;
-                    monthCount++;
-                }
-                
-                // Weekly stats
-                if (runDate >= startOfWeek) {
-                    weekMileage += distanceKm;
-                    weekCount++;
-                }
-
-                const totalSeconds = run.moving_time;
-                const hours = Math.floor(totalSeconds / 3600);
-                const minutes = Math.floor((totalSeconds % 3600) / 60);
-                const timeStr = hours > 0 ? `${hours}小時${minutes}分` : `${minutes}分`;
-                const dateStr = runDate.toLocaleDateString('zh-TW', {
-                    month: 'long',
-                    day: 'numeric',
-                    weekday: 'short'
-                });
-                
-                const paceSeconds = run.moving_time / distanceKm;
-
-                // Update 5k PB
-                if (distanceKm >= 4.9 && distanceKm <= 5.5) {
-                    if (!personalBests.run5k || paceSeconds < personalBests.run5k.paceSeconds) {
-                        personalBests.run5k = { name: run.name, date: dateStr, paceSeconds, time: timeStr, distance: distanceKm.toFixed(2) };
-                    }
-                }
-                // Update 10k PB
-                if (distanceKm >= 9.8 && distanceKm <= 10.5) {
-                    if (!personalBests.run10k || paceSeconds < personalBests.run10k.paceSeconds) {
-                        personalBests.run10k = { name: run.name, date: dateStr, paceSeconds, time: timeStr, distance: distanceKm.toFixed(2) };
-                    }
-                }
-
-                return {
-                    id: run.id,
-                    name: run.name,
-                    date: dateStr,
-                    distance_km: distanceKm.toFixed(2),
-                    moving_time_display: timeStr,
-                    moving_time_minutes: (run.moving_time / 60).toFixed(2),
-                    average_heartrate: run.average_heartrate,
-                    average_speed_m_s: run.average_speed,
-                    total_elevation_gain_m: run.total_elevation_gain
-                };
-            });
-
-            updateStatsDashboard(monthMileage, monthCount, weekMileage, weekCount);
-            renderRuns(runsData);
+            setStatus("正在完成 Strava 驗證...", "info");
+            await exchangeCodeForToken(authCode, authState);
+            stripAuthParams();
         } catch (error) {
-            console.error(error);
-            runsList.innerHTML = `<p class="loading">❌ 載入失敗: ${error.message}</p>`;
+            setStatus(error.message, "error");
+            stripAuthParams();
         }
     }
 
-    function updateStatsDashboard(monthM, monthC, weekM, weekC) {
-        document.getElementById("month-mileage").innerText = monthM.toFixed(1);
-        document.getElementById("month-count").innerText = `${monthC} 次訓練`;
-        document.getElementById("week-mileage").innerText = weekM.toFixed(1);
-        document.getElementById("week-count").innerText = `${weekC} 次訓練`;
-
-        if (personalBests.run5k) {
-            const p = personalBests.run5k.paceSeconds;
-            const m = Math.floor(p / 60);
-            const s = Math.round(p % 60);
-            document.getElementById("pb-5k").innerText = `${m}'${s.toString().padStart(2, '0')}`;
-            document.getElementById("pb-5k-date").innerText = personalBests.run5k.date;
-        }
-
-        if (personalBests.run10k) {
-            const p = personalBests.run10k.paceSeconds;
-            const m = Math.floor(p / 60);
-            const s = Math.round(p % 60);
-            document.getElementById("pb-10k").innerText = `${m}'${s.toString().padStart(2, '0')}`;
-            document.getElementById("pb-10k-date").innerText = personalBests.run10k.date;
-        }
+    if (!hasSavedCredentials()) {
+        showSetupState(false);
+        return;
     }
 
-    function renderRuns(runs) {
-        if (!runs || runs.length === 0) {
-            runsList.innerHTML = `<p class="loading">沒有找到近期的跑步紀錄。</p>`;
-            return;
-        }
+    showAuthState();
 
-        runsList.innerHTML = "";
-        runs.forEach(run => {
-            const speed = parseFloat(run.average_speed_m_s);
-            const pace = speed > 0 ? (1000 / 60 / speed).toFixed(2).replace('.', '\'') : "0'00";
+    const token = await ensureValidToken();
+    if (!token) {
+        setStatus("請先連接 Strava 帳號，再載入跑步資料。", "info");
+        return;
+    }
 
-            const card = document.createElement("div");
-            card.className = "run-card";
-            card.innerHTML = `
-                <div class="run-info" style="flex: 1;">
-                    <div style="display: flex; flex-direction: column; gap: 0.2rem;">
-                        <h3 style="margin-bottom: 0;">${run.name}</h3>
-                        <span style="font-size: 0.85rem; color: var(--text-secondary);">${run.date}</span>
-                    </div>
-                    <div class="run-metrics" style="margin-top: 0.8rem;">
-                        <div class="metric">🏃‍♂️ <span>${run.distance_km}</span> km</div>
-                        <div class="metric">⏱️ <span>${run.moving_time_display}</span></div>
-                        <div class="metric">❤️ <span>${run.average_heartrate || '--'}</span> bpm</div>
-                        <div class="metric">📈 <span>${run.total_elevation_gain_m || 0}</span> m</div>
-                    </div>
-                </div>
-                <div class="run-pace" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.5rem;">
-                    <div class="metric">配速: <span>${pace}</span> /km</div>
-                    <button class="btn view-details-btn" data-id="${run.id}" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #bfdbfe;">📊 圖表與分段</button>
-                    <button class="btn download-run-btn" data-id="${run.id}" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: rgba(192, 132, 252, 0.2); border: 1px solid #c084fc; color: #e9d5ff;">📥 原始感測資料</button>
-                    <div class="download-status" id="dl-status-${run.id}" style="font-size: 0.8rem; color: #4ade80; display: none;">打包中..</div>
-                </div>
-                <div class="run-details hidden" id="details-${run.id}" style="grid-column: 1 / -1;"></div>
-            `;
-            runsList.appendChild(card);
+    await loadDashboard();
+}
+
+function hydrateSettingsInputs() {
+    ui.clientIdInput.value = localStorage.getItem(STORAGE_KEYS.clientId) || "";
+    ui.clientSecretInput.value = localStorage.getItem(STORAGE_KEYS.clientSecret) || "";
+}
+
+function handleSaveSettings() {
+    const clientId = ui.clientIdInput.value.trim();
+    const clientSecret = ui.clientSecretInput.value.trim();
+
+    if (!clientId || !clientSecret) {
+        setStatus("請完整填入 Strava Client ID 與 Client Secret。", "error");
+        return;
+    }
+
+    localStorage.setItem(STORAGE_KEYS.clientId, clientId);
+    localStorage.setItem(STORAGE_KEYS.clientSecret, clientSecret);
+    clearTokenStorage();
+    setStatus("API 設定已儲存，接著可以開始 Strava 授權。", "success");
+    showAuthState();
+}
+
+function handleClearSettings() {
+    localStorage.removeItem(STORAGE_KEYS.clientId);
+    localStorage.removeItem(STORAGE_KEYS.clientSecret);
+    localStorage.removeItem(STORAGE_KEYS.athleteName);
+    clearTokenStorage();
+    hydrateSettingsInputs();
+    state.summary = null;
+    renderEmptyDashboard();
+    showSetupState(false);
+    setStatus("已清除 API 設定與授權資料。", "success");
+}
+
+function handleLogout() {
+    clearTokenStorage();
+    state.summary = null;
+    renderEmptyDashboard();
+    showAuthState();
+    setStatus("已清除本機授權 token，需要重新連接 Strava。", "success");
+}
+
+function setActionState(isReady) {
+    ui.refreshDataBtn.disabled = !isReady;
+    ui.logoutBtn.disabled = !isReady;
+}
+
+function showSetupState(showStatus) {
+    ui.setupSection.classList.remove("hidden");
+    ui.authSection.classList.add("hidden");
+    ui.dashboard.classList.add("hidden");
+    setActionState(false);
+
+    if (showStatus) {
+        setStatus("你可以在這裡更新 Strava API 設定。", "info");
+    }
+}
+
+function showAuthState() {
+    ui.setupSection.classList.add("hidden");
+    ui.authSection.classList.remove("hidden");
+    ui.dashboard.classList.add("hidden");
+    setActionState(false);
+}
+
+function showDashboardState() {
+    ui.setupSection.classList.add("hidden");
+    ui.authSection.classList.add("hidden");
+    ui.dashboard.classList.remove("hidden");
+    setActionState(true);
+}
+
+function setStatus(message, variant = "info") {
+    ui.statusBanner.textContent = message;
+    ui.statusBanner.className = `status-banner status-${variant}`;
+}
+
+function clearStatus() {
+    ui.statusBanner.textContent = "";
+    ui.statusBanner.className = "status-banner hidden";
+}
+
+function stripAuthParams() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("code");
+    url.searchParams.delete("scope");
+    url.searchParams.delete("state");
+    url.searchParams.delete("error");
+    window.history.replaceState({}, document.title, url.toString());
+}
+
+function hasSavedCredentials() {
+    return Boolean(localStorage.getItem(STORAGE_KEYS.clientId) && localStorage.getItem(STORAGE_KEYS.clientSecret));
+}
+
+function getCredentials() {
+    return {
+        clientId: localStorage.getItem(STORAGE_KEYS.clientId) || "",
+        clientSecret: localStorage.getItem(STORAGE_KEYS.clientSecret) || "",
+    };
+}
+
+function getTokenData() {
+    return {
+        accessToken: localStorage.getItem(STORAGE_KEYS.accessToken) || "",
+        refreshToken: localStorage.getItem(STORAGE_KEYS.refreshToken) || "",
+        expiresAt: Number(localStorage.getItem(STORAGE_KEYS.expiresAt) || 0),
+    };
+}
+
+function clearTokenStorage() {
+    localStorage.removeItem(STORAGE_KEYS.accessToken);
+    localStorage.removeItem(STORAGE_KEYS.refreshToken);
+    localStorage.removeItem(STORAGE_KEYS.expiresAt);
+    localStorage.removeItem(STORAGE_KEYS.authState);
+}
+
+function saveTokenData(payload) {
+    localStorage.setItem(STORAGE_KEYS.accessToken, payload.access_token);
+    localStorage.setItem(STORAGE_KEYS.refreshToken, payload.refresh_token);
+    localStorage.setItem(STORAGE_KEYS.expiresAt, String(payload.expires_at));
+
+    if (payload.athlete?.firstname) {
+        localStorage.setItem(
+            STORAGE_KEYS.athleteName,
+            `${payload.athlete.firstname}${payload.athlete.lastname ? ` ${payload.athlete.lastname}` : ""}`,
+        );
+    }
+}
+
+function buildRedirectUri() {
+    return new URL(window.location.pathname, window.location.origin).toString();
+}
+
+function startStravaLogin() {
+    if (window.location.protocol === "file:") {
+        setStatus("請用 Live Server 或 `python -m http.server` 啟動，OAuth 無法在 file:// 模式完成。", "error");
+        return;
+    }
+
+    const { clientId } = getCredentials();
+    if (!clientId) {
+        showSetupState(true);
+        return;
+    }
+
+    const stateValue = createOAuthState();
+    localStorage.setItem(STORAGE_KEYS.authState, stateValue);
+
+    const loginUrl = new URL("https://www.strava.com/oauth/authorize");
+    loginUrl.searchParams.set("client_id", clientId);
+    loginUrl.searchParams.set("redirect_uri", buildRedirectUri());
+    loginUrl.searchParams.set("response_type", "code");
+    loginUrl.searchParams.set("approval_prompt", "auto");
+    loginUrl.searchParams.set("scope", "read,activity:read_all");
+    loginUrl.searchParams.set("state", stateValue);
+
+    window.location.href = loginUrl.toString();
+}
+
+function createOAuthState() {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function exchangeCodeForToken(code, incomingState) {
+    const expectedState = localStorage.getItem(STORAGE_KEYS.authState);
+    if (expectedState && incomingState && expectedState !== incomingState) {
+        throw new Error("OAuth state 不一致，已中止授權流程。");
+    }
+
+    const { clientId, clientSecret } = getCredentials();
+    if (!clientId || !clientSecret) {
+        throw new Error("缺少 Strava API 設定，無法交換 access token。");
+    }
+
+    const payload = await requestToken({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: "authorization_code",
+    });
+
+    saveTokenData(payload);
+    localStorage.removeItem(STORAGE_KEYS.authState);
+    setStatus("Strava 授權完成，正在載入跑步資料。", "success");
+}
+
+async function ensureValidToken() {
+    const tokenData = getTokenData();
+    if (!tokenData.accessToken) {
+        return null;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (tokenData.expiresAt && tokenData.expiresAt - 120 > now) {
+        return tokenData.accessToken;
+    }
+
+    if (!tokenData.refreshToken) {
+        clearTokenStorage();
+        return null;
+    }
+
+    try {
+        const { clientId, clientSecret } = getCredentials();
+        const payload = await requestToken({
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: "refresh_token",
+            refresh_token: tokenData.refreshToken,
         });
+        saveTokenData(payload);
+        return payload.access_token;
+    } catch (error) {
+        clearTokenStorage();
+        setStatus(`刷新 Strava token 失敗：${error.message}`, "error");
+        return null;
+    }
+}
 
-        // Add event listeners for individual download buttons
-        document.querySelectorAll(".download-run-btn").forEach(btn => {
-            btn.addEventListener("click", async (e) => {
-                const runId = e.target.getAttribute("data-id");
-                await downloadSingleRunData(runId);
-            });
-        });
+async function requestToken(params) {
+    const response = await fetch("https://www.strava.com/oauth/token", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(params),
+    });
 
-        // Add event listeners for details toggle
-        document.querySelectorAll(".view-details-btn").forEach(btn => {
-            btn.addEventListener("click", async (e) => {
-                const runId = e.target.getAttribute("data-id");
-                await toggleRunDetails(runId);
-            });
-        });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload.message || "Strava token API 回應失敗。");
     }
 
-    // 5. In-App Run Details (Splits & Charts)
-    async function toggleRunDetails(runId) {
-        const detailsDiv = document.getElementById(`details-${runId}`);
+    return payload;
+}
 
-        // If already open, just hide it
-        if (!detailsDiv.classList.contains("hidden")) {
-            detailsDiv.classList.add("hidden");
-            return;
-        }
-
-        // Show it
-        detailsDiv.classList.remove("hidden");
-
-        // If content is already rendered, just return
-        if (detailsDiv.innerHTML.trim() !== "") return;
-
-        detailsDiv.innerHTML = "<p style='text-align:center; padding: 1rem 0;'>載入圖表紀錄中... 🔄</p>";
-
-        const run = runsData.find(r => r.id.toString() === runId.toString());
-        const token = localStorage.getItem("strava_access_token");
-
-        try {
-            // Fetch splits (activity details)
-            const detailResp = await fetch(`https://www.strava.com/api/v3/activities/${runId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            let detailData = {};
-            if (detailResp.ok) detailData = await detailResp.json();
-
-            // Fetch streams (curves)
-            const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${runId}/streams/distance,heartrate,velocity_smooth?key_by_type=true`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            let streamData = {};
-            if (streamResp.ok) streamData = await streamResp.json();
-
-            renderRunDetailsHTML(detailsDiv, run, detailData, streamData);
-        } catch (err) {
-            console.error(err);
-            detailsDiv.innerHTML = "<p style='color:red; text-align:center;'>載入失敗，可能有 API 限制或網路錯誤 🤔</p>";
-        }
+async function loadDashboard() {
+    const token = await ensureValidToken();
+    if (!token) {
+        showAuthState();
+        return;
     }
 
-    function renderRunDetailsHTML(container, run, detailData, streamData) {
-        let html = "";
+    showDashboardState();
+    clearStatus();
+    ui.runsList.innerHTML = '<p class="empty-state">正在載入跑步資料...</p>';
+    ui.runsCount.textContent = "載入中";
 
-        // 1. Splits Table
-        if (detailData.splits_metric && detailData.splits_metric.length > 0) {
-            html += `<h4 style="margin: 1rem 0 0.5rem; color: #bfdbfe;">📍 逐公里分段速度 (Splits)</h4>
-            <table class="splits-table">
-                <thead><tr><th>公里</th><th>配速</th><th>心率 (bpm)</th><th>爬升 (m)</th></tr></thead>
-                <tbody>`;
+    try {
+        const activities = await fetchRunActivities(token);
+        state.summary = summariseActivities(activities, new Date());
+        renderDashboard(state.summary);
 
-            detailData.splits_metric.forEach(split => {
-                if (split.distance < 100 && split.split > run.distance_km) return;
-
-                const spd = parseFloat(split.average_speed);
-                const paceStr = spd > 0 ? (1000 / 60 / spd).toFixed(2).replace('.', '\'') : "0'00";
-                const splitHr = split.average_heartrate ? `${Math.round(split.average_heartrate)}` : '--';
-                const splitElev = split.elevation_difference ? `${split.elevation_difference}` : '0';
-
-                html += `<tr>
-                    <td>${split.split}</td>
-                    <td>${paceStr}</td>
-                    <td>${splitHr}</td>
-                    <td>${splitElev}</td>
-                </tr>`;
-            });
-            html += `</tbody></table>`;
+        if (state.summary.runs.length === 0) {
+            setStatus("已連接 Strava，但目前沒有找到跑步活動資料。", "info");
+        } else {
+            const athleteName = localStorage.getItem(STORAGE_KEYS.athleteName);
+            const prefix = athleteName ? `${athleteName}，` : "";
+            setStatus(`${prefix}已載入 ${state.summary.runs.length} 筆跑步活動。`, "success");
         }
-
-        // 2. Chart container
-        if (streamData && streamData.distance && (streamData.heartrate || streamData.velocity_smooth)) {
-            html += `<h4 style="margin: 1.5rem 0 0.5rem; color: #bfdbfe;">📈 心率與配速曲線</h4>
-            <div class="chart-container">
-                <canvas id="chart-canvas-${run.id}"></canvas>
-            </div>`;
-        }
-
-        if (html === "") {
-            html = "<p style='text-align:center;'>此筆紀錄沒有詳細的分段或心率曲線。可能是在室內或未帶感測器。</p>";
-        }
-
-        container.innerHTML = html;
-
-        // Render Chart if possible
-        if (streamData && streamData.distance && (streamData.heartrate || streamData.velocity_smooth)) {
-            renderChart(run.id, streamData);
-        }
+    } catch (error) {
+        console.error(error);
+        showAuthState();
+        setStatus(`載入 Strava 活動失敗：${error.message}`, "error");
     }
+}
 
-    function renderChart(runId, streamData) {
-        const canvas = document.getElementById(`chart-canvas-${runId}`);
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
+async function fetchRunActivities(token) {
+    const activities = [];
+    const perPage = 100;
 
-        const labels = streamData.distance.data.map(d => (d / 1000).toFixed(2));
-        const datasets = [];
-
-        if (streamData.heartrate) {
-            datasets.push({
-                label: '心率 (bpm)',
-                data: streamData.heartrate.data,
-                borderColor: 'rgba(239, 68, 68, 0.8)',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                yAxisID: 'y',
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.3
-            });
-        }
-
-        if (streamData.velocity_smooth) {
-            const paceData = streamData.velocity_smooth.data.map(speed => {
-                if (speed < 0.5) return null; // Avoid inf
-                return 1000 / (60 * speed);
-            });
-
-            datasets.push({
-                label: '配速 (分/公里)',
-                data: paceData,
-                borderColor: 'rgba(59, 130, 246, 0.8)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                yAxisID: 'y1',
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.3,
-                spanGaps: true
-            });
-        }
-
-        new Chart(ctx, {
-            type: 'line',
-            data: { labels, datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                scales: {
-                    x: {
-                        ticks: { maxTicksLimit: 10, color: '#94a3b8' },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                    },
-                    y: {
-                        type: 'linear', display: true, position: 'left',
-                        title: { display: true, text: '心率 (bpm)', color: '#ef4444' },
-                        ticks: { color: '#94a3b8' },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                    },
-                    y1: {
-                        type: 'linear', display: true, position: 'right',
-                        reverse: true, // HIGHER visually means LOWER numerical pace (faster)
-                        title: { display: true, text: '配速 (分/公里)', color: '#3b82f6' },
-                        grid: { drawOnChartArea: false },
-                        ticks: { color: '#94a3b8' }
-                    }
-                },
-                plugins: {
-                    legend: { labels: { color: '#e2e8f0' } },
-                    tooltip: {
-                        callbacks: {
-                            label: function (context) {
-                                let label = context.dataset.label || '';
-                                if (label) label += ': ';
-                                if (context.parsed.y !== null) {
-                                    if (context.dataset.yAxisID === 'y1') {
-                                        const mins = Math.floor(context.parsed.y);
-                                        const secs = Math.round((context.parsed.y - mins) * 60);
-                                        label += mins + "'" + secs.toString().padStart(2, '0');
-                                    } else {
-                                        label += Math.round(context.parsed.y);
-                                    }
-                                }
-                                return label;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Individual Run Data Export
-    async function downloadSingleRunData(runId) {
-        const run = runsData.find(r => r.id.toString() === runId.toString());
-        if (!run) return;
-
-        const downloadBtn = document.querySelector(`.download-run-btn[data-id="${runId}"]`);
-        const statusText = document.getElementById(`dl-status-${runId}`);
-
-        downloadBtn.style.display = "none";
-        statusText.style.display = "block";
-
-        const token = localStorage.getItem("strava_access_token");
-
-        const exportData = {
-            activity_id: run.id,
-            name: run.name,
-            summary: {
-                distance_km: parseFloat(run.distance_km),
-                moving_time_minutes: parseFloat(run.moving_time_minutes),
-                average_heartrate: run.average_heartrate || null,
-                average_speed_m_s: run.average_speed_m_s,
-                total_elevation_gain_m: run.total_elevation_gain_m || 0
+    for (let page = 1; page <= 4; page += 1) {
+        const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
             },
-            streams: {}
-        };
+        });
 
-        try {
-            // Fetch high-resolution streams
-            const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}/streams/time,distance,heartrate,velocity_smooth,altitude,cadence?key_by_type=true`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (streamResp.ok) {
-                const streamData = await streamResp.json();
-
-                if (streamData.time) exportData.streams.time_seconds = streamData.time.data;
-                if (streamData.distance) exportData.streams.distance_meters = streamData.distance.data;
-                if (streamData.heartrate) exportData.streams.heartrate_bpm = streamData.heartrate.data;
-                if (streamData.velocity_smooth) exportData.streams.velocity_m_s = streamData.velocity_smooth.data;
-                if (streamData.altitude) exportData.streams.altitude_meters = streamData.altitude.data;
-                if (streamData.cadence) exportData.streams.cadence_spm = streamData.cadence.data;
-            } else {
-                statusText.innerText = "❌ 抓取失敗";
-                statusText.style.color = "#ef4444";
-                setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
-                return;
-            }
-        } catch (err) {
-            console.warn("Failed to fetch stream data for run", run.id, err);
-            statusText.innerText = "❌ 網路錯誤";
-            statusText.style.color = "#ef4444";
-            setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
-            return;
+        if (response.status === 401) {
+            clearTokenStorage();
+            throw new Error("Strava access token 已失效，請重新授權。");
         }
 
-        statusText.innerText = "✅ 完成！";
+        if (!response.ok) {
+            throw new Error(`Strava activities API 錯誤 (${response.status})。`);
+        }
 
-        // Create Blob and Download
-        const jsonString = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
+        const pageData = await response.json();
+        if (!Array.isArray(pageData) || pageData.length === 0) {
+            break;
+        }
 
-        const a = document.createElement("a");
-        a.href = url;
-        // Clean up the name for file systems
-        const safeName = run.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `strava_${safeName}_${run.id}.json`;
-        document.body.appendChild(a);
-        a.click();
-
-        setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            statusText.style.display = "none";
-            downloadBtn.style.display = "block";
-        }, 2000);
+        activities.push(...pageData);
+        if (pageData.length < perPage) {
+            break;
+        }
     }
 
-    // 5. Prompt Generation
-    async function generateCoachPrompt(model) {
-        promptContainer.classList.remove("hidden");
-        copyToast.style.display = "none";
-        promptContainer.style.borderLeftColor = model === 'openai' ? 'var(--openai-color)' : 'var(--gemini-color)';
+    return activities.filter((activity) => activity.type === "Run" || activity.sport_type === "Run");
+}
 
-        if (runsData.length === 0) {
-            coachPrompt.value = "目前沒有找到近期的跑步紀錄。快去動一動吧！";
-            return;
-        }
+function renderDashboard(summary) {
+    renderTopStats(summary);
+    renderInsight(summary);
+    renderWeeklyChart(summary.weeklyTrend);
+    renderRuns(summary.runs);
+}
 
-        coachPrompt.value = "正在向 Strava 獲取您每公里的詳細配速與心率曲線資料，請稍候...";
-        const ai_name = model === 'openai' ? "ChatGPT" : "Gemini";
-        const token = localStorage.getItem("strava_access_token");
+function renderTopStats(summary) {
+    ui.monthMileage.textContent = formatDistance(summary.totals.monthDistanceKm);
+    ui.monthCount.textContent = `${summary.totals.monthCount} 次跑步`;
+    ui.weekMileage.textContent = formatDistance(summary.totals.weekDistanceKm);
+    ui.weekCount.textContent = `${summary.totals.weekCount} 次跑步`;
 
-        let prompt = `你好 ${ai_name}，我希望你擔任我的專業馬拉松教練。以下是我從 Strava 歷史紀錄中篩選出的個人最佳紀錄 (PB) 以及最近的訓練數據。\n\n`;
-        
-        // Add PBs to prompt
-        prompt += `🏆 【個人最佳紀錄 (從歷史 200 筆紀錄中篩選)】\n`;
-        if (personalBests.run5k) {
-            const pb5kPace = (1000 / 60 / (1 / (personalBests.run5k.paceSeconds / 1000))).toFixed(2).replace('.', '\'');
-            // Wait, paceSeconds is already pace in seconds per km. Let's fix calculation.
-            const p5 = personalBests.run5k.paceSeconds;
-            const p5m = Math.floor(p5 / 60);
-            const p5s = Math.round(p5 % 60);
-            prompt += `- 5公里最快: ${p5m}'${p5s.toString().padStart(2, '0')}/km (${personalBests.run5k.name}, ${personalBests.run5k.date})\n`;
-        } else {
-            prompt += `- 5公里最快: 尚未有足夠數據\n`;
-        }
-        
-        if (personalBests.run10k) {
-            const p10 = personalBests.run10k.paceSeconds;
-            const p10m = Math.floor(p10 / 60);
-            const p10s = Math.round(p10 % 60);
-            prompt += `- 10公里最快: ${p10m}'${p10s.toString().padStart(2, '0')}/km (${personalBests.run10k.name}, ${personalBests.run10k.date})\n`;
-        } else {
-            prompt += `- 10公里最快: 尚未有足夠數據\n`;
-        }
-        prompt += `\n`;
+    ui.recentPace.textContent = formatPaceFromSeconds(summary.totals.recentAveragePaceSec);
+    ui.recentPaceNote.textContent = "最近 4 次活動";
+    ui.recentHr.textContent =
+        summary.totals.recentAverageHr == null ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`;
+    ui.recentHrNote.textContent = "最近 4 次活動";
 
-        prompt += `📋 【近期訓練細節】\n`;
-        prompt += `我提供了最近 3 筆訓練的「整體平均數據」與「每公里分段數據 (Splits)」，請分析我的配速與心率變化曲線。\n\n`;
+    renderBestEffort(ui.pb5k, ui.pb5kDate, summary.bests.run5k, "尚無接近 5K 的活動");
+    renderBestEffort(ui.pb10k, ui.pb10kDate, summary.bests.run10k, "尚無接近 10K 的活動");
+}
 
-        // Take top 3 runs max to avoid making prompt too huge for phone memory
-        const recentRuns = runsData.slice(0, 3);
-
-        for (const run of recentRuns) {
-            const hr = run.average_heartrate || '未知';
-            const elev = run.total_elevation_gain_m || 0;
-            const avgSpeed = parseFloat(run.average_speed_m_s);
-            const avgPace = avgSpeed > 0 ? (1000 / 60 / avgSpeed).toFixed(2).replace('.', '\'') : "0'00";
-
-            prompt += `🏃‍♂️ 【${run.name}】\n`;
-            prompt += `整體表現：距離 ${run.distance_km} km，移動時間 ${run.moving_time_minutes} 分鐘，平均配速 ${avgPace}/km，平均心率 ${hr} bpm，總爬升 ${elev} 公尺。\n`;
-
-            // Fetch detailed activity for splits (curves)
-            try {
-                const detailResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (detailResp.ok) {
-                    const detailData = await detailResp.json();
-                    if (detailData.splits_metric && detailData.splits_metric.length > 0) {
-                        prompt += `📍 每公里分段變化 (曲線數據)：\n`;
-                        detailData.splits_metric.forEach(split => {
-                            // Don't log small remaining fractional kilometers if they are too short (e.g. 0.01km)
-                            if (split.distance < 100 && split.split > run.distance_km) return;
-
-                            const spd = parseFloat(split.average_speed);
-                            const paceStr = spd > 0 ? (1000 / 60 / spd).toFixed(2).replace('.', '\'') : "0'00";
-                            const splitHr = split.average_heartrate ? `${Math.round(split.average_heartrate)} bpm` : '未知';
-                            const splitElev = split.elevation_difference ? `${split.elevation_difference}m` : '0m';
-
-                            prompt += `  - 第 ${split.split} 公里: 配速 ${paceStr}/km, 心率 ${splitHr}, 爬升/下降 ${splitElev}\n`;
-                        });
-                    }
-                }
-            } catch (err) {
-                console.warn("Failed to fetch splits for run", run.id, err);
-            }
-            prompt += `\n`;
-        }
-
-        prompt += `👉 教練指令：\n`;
-        prompt += `請根據以上包含「分段曲線」的數據詳細分析我的表現。幫我看看：\n`;
-        prompt += `1. 我的配速策略是否穩定？前半段與後半段是否有掉速？\n`;
-        prompt += `2. 心率的發展曲線是否合理？是否在特定公里數飄高？\n`;
-        prompt += `3. 爬升路段對我的心率/配速造成的影響？\n`;
-        prompt += `幫我綜合評估後，給我下一次訓練的建議。請用繁體中文且帶有專業但鼓勵的語氣回答我。`;
-
-        coachPrompt.value = prompt;
+function renderBestEffort(valueNode, subtextNode, run, emptyText) {
+    if (!run) {
+        valueNode.textContent = "--";
+        subtextNode.textContent = emptyText;
+        return;
     }
 
-    copyBtn.addEventListener("click", () => {
-        if (!coachPrompt.value || coachPrompt.value.includes("目前沒有找到") || coachPrompt.value.includes("正在向")) {
-            return;
-        }
-        navigator.clipboard.writeText(coachPrompt.value).then(() => {
-            copyToast.style.display = "block";
-            setTimeout(() => {
-                copyToast.style.display = "none";
-            }, 3000);
+    valueNode.textContent = formatDuration(run.movingTimeSec);
+    subtextNode.textContent = `${run.dateLabel} · ${formatPaceFromSeconds(run.averagePaceSec)}`;
+}
+
+function renderInsight(summary) {
+    ui.trainingHeadline.textContent = summary.insight.headline;
+    ui.trainingSummary.textContent = summary.insight.summary;
+    ui.recentLoad.textContent = formatDistance(summary.totals.recentSevenDayDistanceKm);
+    ui.longestRun.textContent = formatDistance(summary.totals.longestRunKm);
+    ui.paceDelta.textContent =
+        summary.insight.paceDeltaSec == null
+            ? "--"
+            : `${summary.insight.paceDeltaSec > 0 ? "+" : ""}${summary.insight.paceDeltaSec} 秒/km`;
+    ui.consistencyScore.textContent = summary.totals.consistencyScore;
+}
+
+function renderWeeklyChart(weeklyTrend) {
+    if (!window.Chart || !ui.weeklyChartCanvas) {
+        return;
+    }
+
+    if (state.weeklyChart) {
+        state.weeklyChart.destroy();
+    }
+
+    state.weeklyChart = new window.Chart(ui.weeklyChartCanvas, {
+        type: "bar",
+        data: {
+            labels: weeklyTrend.map((entry) => entry.label),
+            datasets: [
+                {
+                    label: "跑量 (km)",
+                    data: weeklyTrend.map((entry) => entry.distanceKm),
+                    borderRadius: 14,
+                    backgroundColor: [
+                        "rgba(94, 234, 212, 0.28)",
+                        "rgba(94, 234, 212, 0.32)",
+                        "rgba(94, 234, 212, 0.38)",
+                        "rgba(94, 234, 212, 0.45)",
+                        "rgba(249, 115, 22, 0.42)",
+                        "rgba(249, 115, 22, 0.55)",
+                    ],
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: "#edf6f3" },
+                },
+                tooltip: {
+                    callbacks: {
+                        afterLabel(context) {
+                            const trendEntry = weeklyTrend[context.dataIndex];
+                            return `跑步次數: ${trendEntry.runCount}`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { color: "#99aebe" },
+                    grid: { display: false },
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: "#99aebe" },
+                    grid: { color: "rgba(153, 174, 190, 0.12)" },
+                },
+            },
+        },
+    });
+}
+
+function renderRuns(runs) {
+    ui.runsCount.textContent = `${runs.length} 筆`;
+
+    if (runs.length === 0) {
+        ui.runsList.innerHTML = '<p class="empty-state">找不到跑步活動，請確認 Strava 帳號中是否有 `Run` 類型資料。</p>';
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    runs.slice(0, 16).forEach((run) => {
+        const card = document.createElement("article");
+        card.className = "run-card";
+
+        const badge = run.averageHeartrate
+            ? `平均 ${run.averageHeartrate} bpm`
+            : run.distanceKm >= 14
+                ? "長距離"
+                : "一般跑";
+
+        card.innerHTML = `
+            <div class="run-header">
+                <div>
+                    <h3 class="run-title">${escapeHtml(run.name)}</h3>
+                    <p class="run-date">${run.dateLabel}</p>
+                </div>
+                <span class="run-badge">${badge}</span>
+            </div>
+            <div class="run-metrics">
+                <div class="metric-box">
+                    <span class="metric-label">距離</span>
+                    <strong class="metric-value">${formatDistance(run.distanceKm)}</strong>
+                </div>
+                <div class="metric-box">
+                    <span class="metric-label">時間</span>
+                    <strong class="metric-value">${run.movingTimeLabel}</strong>
+                </div>
+                <div class="metric-box">
+                    <span class="metric-label">平均配速</span>
+                    <strong class="metric-value">${run.averagePaceLabel}</strong>
+                </div>
+                <div class="metric-box">
+                    <span class="metric-label">爬升</span>
+                    <strong class="metric-value">${Math.round(run.elevationGain)} m</strong>
+                </div>
+            </div>
+            <div class="run-actions">
+                <button class="btn btn-primary js-toggle-details" type="button" data-run-id="${run.id}">展開分析</button>
+                <button class="btn btn-ghost js-download-run" type="button" data-run-id="${run.id}">下載 JSON</button>
+            </div>
+            <div id="details-${run.id}" class="run-details hidden"></div>
+        `;
+
+        fragment.appendChild(card);
+    });
+
+    ui.runsList.innerHTML = "";
+    ui.runsList.appendChild(fragment);
+
+    ui.runsList.querySelectorAll(".js-toggle-details").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const runId = button.getAttribute("data-run-id");
+            await toggleRunDetails(runId, button);
         });
     });
 
-    openaiBtn.addEventListener("click", () => generateCoachPrompt("openai"));
-    geminiBtn.addEventListener("click", () => generateCoachPrompt("gemini"));
+    ui.runsList.querySelectorAll(".js-download-run").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const runId = button.getAttribute("data-run-id");
+            await downloadRunJson(runId, button);
+        });
+    });
+}
 
-    // 6. DB Export (Stream Data for Individual DB Export)
-    async function downloadSingleRunData(runId) {
-        const run = runsData.find(r => r.id.toString() === runId.toString());
-        if (!run) return;
+async function toggleRunDetails(runId, button) {
+    const container = document.getElementById(`details-${runId}`);
+    if (!container) {
+        return;
+    }
 
-        const downloadBtn = document.querySelector(`.download-run-btn[data-id="${runId}"]`);
-        const statusText = document.getElementById(`dl-status-${runId}`);
+    if (!container.classList.contains("hidden")) {
+        container.classList.add("hidden");
+        button.textContent = "展開分析";
+        return;
+    }
 
-        downloadBtn.style.display = "none";
-        statusText.style.display = "block";
+    container.classList.remove("hidden");
+    button.textContent = "收合分析";
 
-        const token = localStorage.getItem("strava_access_token");
+    if (state.detailCache.has(runId)) {
+        renderRunDetail(container, runId, state.detailCache.get(runId));
+        return;
+    }
 
-        const exportData = {
+    container.innerHTML = '<p class="detail-copy">正在載入分段與曲線資料...</p>';
+
+    try {
+        const detailBundle = await fetchRunDetailBundle(runId);
+        state.detailCache.set(runId, detailBundle);
+        renderRunDetail(container, runId, detailBundle);
+    } catch (error) {
+        console.error(error);
+        container.innerHTML = `<p class="detail-copy">無法載入這筆活動的細節資料：${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function fetchRunDetailBundle(runId) {
+    const token = await ensureValidToken();
+    if (!token) {
+        throw new Error("授權已失效，請重新登入 Strava。");
+    }
+
+    const [detailResp, streamResp] = await Promise.all([
+        fetch(`https://www.strava.com/api/v3/activities/${runId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(
+            `https://www.strava.com/api/v3/activities/${runId}/streams/distance,heartrate,velocity_smooth,altitude?key_by_type=true`,
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            },
+        ),
+    ]);
+
+    if (!detailResp.ok) {
+        throw new Error(`活動細節 API 錯誤 (${detailResp.status})`);
+    }
+
+    const detail = await detailResp.json();
+    const streams = streamResp.ok ? await streamResp.json() : {};
+
+    return { detail, streams };
+}
+
+function renderRunDetail(container, runId, bundle) {
+    const detail = bundle.detail;
+    const splits = Array.isArray(detail.splits_metric) ? detail.splits_metric : [];
+    const heartRate = detail.average_heartrate == null ? "--" : `${Math.round(detail.average_heartrate)} bpm`;
+    const cadence = detail.average_cadence == null ? "--" : `${detail.average_cadence.toFixed(1)} spm`;
+    const calories = detail.calories == null ? "--" : `${Math.round(detail.calories)} kcal`;
+    const sufferScore = detail.suffer_score == null ? "--" : String(detail.suffer_score);
+    const chartId = `run-chart-${runId}`;
+
+    let splitsHtml = '<p class="detail-copy">這筆活動沒有每公里 splits 資料。</p>';
+    if (splits.length > 0) {
+        const rows = splits
+            .map((split) => {
+                const pace = split.average_speed ? formatPaceFromSpeed(split.average_speed) : "--";
+                const splitHr = split.average_heartrate == null ? "--" : `${Math.round(split.average_heartrate)}`;
+                const climb = split.elevation_difference == null ? "0" : `${Math.round(split.elevation_difference)}`;
+                return `
+                    <tr>
+                        <td>${split.split}</td>
+                        <td>${pace}</td>
+                        <td>${splitHr}</td>
+                        <td>${climb}</td>
+                    </tr>
+                `;
+            })
+            .join("");
+
+        splitsHtml = `
+            <table class="splits-table">
+                <thead>
+                    <tr>
+                        <th>公里</th>
+                        <th>配速</th>
+                        <th>心率</th>
+                        <th>爬升</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="detail-grid">
+            <div class="detail-card">
+                <div class="detail-title">平均心率</div>
+                <p class="detail-copy">${heartRate}</p>
+            </div>
+            <div class="detail-card">
+                <div class="detail-title">平均步頻</div>
+                <p class="detail-copy">${cadence}</p>
+            </div>
+            <div class="detail-card">
+                <div class="detail-title">熱量</div>
+                <p class="detail-copy">${calories}</p>
+            </div>
+            <div class="detail-card">
+                <div class="detail-title">Suffer Score</div>
+                <p class="detail-copy">${sufferScore}</p>
+            </div>
+        </div>
+        <div>
+            <div class="detail-title">分段分析</div>
+            ${splitsHtml}
+        </div>
+        <div>
+            <div class="detail-title">心率 / 配速曲線</div>
+            <div class="chart-wrapper">
+                <canvas id="${chartId}"></canvas>
+            </div>
+        </div>
+    `;
+
+    renderRunChart(chartId, bundle.streams);
+}
+
+function renderRunChart(canvasId, streams) {
+    if (!window.Chart) {
+        return;
+    }
+
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !streams.distance?.data?.length) {
+        return;
+    }
+
+    const previous = state.runCharts.get(canvasId);
+    if (previous) {
+        previous.destroy();
+    }
+
+    const labels = streams.distance.data.map((distance) => (distance / 1000).toFixed(1));
+    const datasets = [];
+
+    if (streams.heartrate?.data?.length) {
+        datasets.push({
+            label: "心率 (bpm)",
+            data: streams.heartrate.data,
+            borderColor: "rgba(251, 113, 133, 0.85)",
+            backgroundColor: "rgba(251, 113, 133, 0.15)",
+            tension: 0.28,
+            pointRadius: 0,
+            yAxisID: "heart",
+        });
+    }
+
+    if (streams.velocity_smooth?.data?.length) {
+        datasets.push({
+            label: "配速 (min/km)",
+            data: streams.velocity_smooth.data.map((speed) => {
+                if (!speed || speed <= 0.3) {
+                    return null;
+                }
+                return Number((1000 / speed / 60).toFixed(2));
+            }),
+            borderColor: "rgba(94, 234, 212, 0.92)",
+            backgroundColor: "rgba(94, 234, 212, 0.16)",
+            tension: 0.28,
+            pointRadius: 0,
+            spanGaps: true,
+            yAxisID: "pace",
+        });
+    }
+
+    const chart = new window.Chart(canvas, {
+        type: "line",
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                legend: {
+                    labels: { color: "#edf6f3" },
+                },
+                tooltip: {
+                    callbacks: {
+                        label(context) {
+                            if (context.dataset.yAxisID === "pace" && context.parsed.y != null) {
+                                return `${context.dataset.label}: ${formatPaceFromSeconds(context.parsed.y * 60)}`;
+                            }
+
+                            return `${context.dataset.label}: ${Math.round(context.parsed.y)}`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { color: "#99aebe" },
+                    grid: { color: "rgba(153, 174, 190, 0.08)" },
+                },
+                heart: {
+                    type: "linear",
+                    position: "left",
+                    ticks: { color: "#99aebe" },
+                    grid: { color: "rgba(153, 174, 190, 0.08)" },
+                },
+                pace: {
+                    type: "linear",
+                    position: "right",
+                    reverse: true,
+                    ticks: { color: "#99aebe" },
+                    grid: { drawOnChartArea: false },
+                },
+            },
+        },
+    });
+
+    state.runCharts.set(canvasId, chart);
+}
+
+async function downloadRunJson(runId, button) {
+    const run = state.summary?.runs.find((entry) => entry.id === runId);
+    if (!run) {
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = "整理中...";
+
+    try {
+        const bundle = state.detailCache.has(runId) ? state.detailCache.get(runId) : await fetchRunDetailBundle(runId);
+        state.detailCache.set(runId, bundle);
+
+        const payload = {
             activity_id: run.id,
             name: run.name,
             summary: {
-                distance_km: parseFloat(run.distance_km),
-                moving_time_minutes: parseFloat(run.moving_time_minutes),
-                average_heartrate: run.average_heartrate || null,
-                average_speed_m_s: run.average_speed_m_s,
-                total_elevation_gain_m: run.total_elevation_gain_m || 0
+                date: run.dateLabel,
+                distance_km: Number(run.distanceKm.toFixed(2)),
+                moving_time_seconds: run.movingTimeSec,
+                average_pace: run.averagePaceLabel,
+                average_heartrate: run.averageHeartrate,
+                total_elevation_gain_m: Math.round(run.elevationGain),
             },
-            streams: {}
+            detail: bundle.detail,
+            streams: bundle.streams,
         };
 
-        try {
-            // Fetch high-resolution streams
-            const streamResp = await fetch(`https://www.strava.com/api/v3/activities/${run.id}/streams/time,distance,heartrate,velocity_smooth,altitude,cadence?key_by_type=true`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (streamResp.ok) {
-                const streamData = await streamResp.json();
-
-                if (streamData.time) exportData.streams.time_seconds = streamData.time.data;
-                if (streamData.distance) exportData.streams.distance_meters = streamData.distance.data;
-                if (streamData.heartrate) exportData.streams.heartrate_bpm = streamData.heartrate.data;
-                if (streamData.velocity_smooth) exportData.streams.velocity_m_s = streamData.velocity_smooth.data;
-                if (streamData.altitude) exportData.streams.altitude_meters = streamData.altitude.data;
-                if (streamData.cadence) exportData.streams.cadence_spm = streamData.cadence.data;
-            } else {
-                statusText.innerText = "❌ 失敗";
-                statusText.style.color = "#ef4444";
-                setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
-                return;
-            }
-        } catch (err) {
-            console.warn("Failed to fetch stream data for run", run.id, err);
-            statusText.innerText = "❌ 錯誤";
-            statusText.style.color = "#ef4444";
-            setTimeout(() => { downloadBtn.style.display = "block"; statusText.style.display = "none"; }, 3000);
-            return;
-        }
-
-        statusText.innerText = "✅ 成功";
-
-        // Create Blob and Download
-        const jsonString = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement("a");
-        a.href = url;
-        const safeName = run.name.replace(/[^a-z0-9\u4e00-\u9fa5]/gi, '_').toLowerCase();
-        a.download = `strava_${safeName}_${run.id}.json`;
-        document.body.appendChild(a);
-        a.click();
-
+        downloadJson(payload, `strava_run_${run.id}.json`);
+        button.textContent = "已下載";
         setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            statusText.style.display = "none";
-            downloadBtn.style.display = "block";
-        }, 2000);
+            button.disabled = false;
+            button.textContent = "下載 JSON";
+        }, 1200);
+    } catch (error) {
+        console.error(error);
+        button.disabled = false;
+        button.textContent = "下載失敗";
+        setTimeout(() => {
+            button.textContent = "下載 JSON";
+        }, 1400);
+    }
+}
+
+function downloadJson(payload, filename) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+}
+
+async function generateCoachPrompt(provider) {
+    if (!state.summary || state.summary.runs.length === 0) {
+        setStatus("沒有可用的跑步資料，請先完成授權並載入活動。", "error");
+        return;
     }
 
-    initApp();
-});
+    ui.promptContainer.classList.remove("hidden");
+    ui.copyToast.classList.add("hidden");
+    ui.coachPrompt.value = "正在整理近期重點課表與分段資料...";
+
+    try {
+        const highlightedRuns = state.summary.runs.slice(0, 3);
+        const bundles = await Promise.all(
+            highlightedRuns.map(async (run) => {
+                if (state.detailCache.has(run.id)) {
+                    return [run.id, state.detailCache.get(run.id)];
+                }
+
+                const bundle = await fetchRunDetailBundle(run.id);
+                state.detailCache.set(run.id, bundle);
+                return [run.id, bundle];
+            }),
+        );
+
+        const detailMap = new Map(bundles);
+        ui.coachPrompt.value = buildCoachPrompt(provider, state.summary, highlightedRuns, detailMap);
+    } catch (error) {
+        console.error(error);
+        ui.coachPrompt.value = `整理提示詞時發生錯誤：${error.message}`;
+    }
+}
+
+function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
+    const pb5k = summary.bests.run5k
+        ? `${formatDuration(summary.bests.run5k.movingTimeSec)} (${summary.bests.run5k.dateLabel}, ${formatPaceFromSeconds(summary.bests.run5k.averagePaceSec)})`
+        : "目前沒有接近 5K 的活動";
+    const pb10k = summary.bests.run10k
+        ? `${formatDuration(summary.bests.run10k.movingTimeSec)} (${summary.bests.run10k.dateLabel}, ${formatPaceFromSeconds(summary.bests.run10k.averagePaceSec)})`
+        : "目前沒有接近 10K 的活動";
+
+    let prompt = `你是我的 ${provider} 跑步教練，請用繁體中文分析以下 Strava 跑步資料。\n\n`;
+    prompt += `整體摘要\n`;
+    prompt += `- 本月跑量：${formatDistance(summary.totals.monthDistanceKm)}，共 ${summary.totals.monthCount} 次跑步\n`;
+    prompt += `- 本週跑量：${formatDistance(summary.totals.weekDistanceKm)}，共 ${summary.totals.weekCount} 次跑步\n`;
+    prompt += `- 最近 4 次平均配速：${formatPaceFromSeconds(summary.totals.recentAveragePaceSec)}\n`;
+    prompt += `- 最近 4 次平均心率：${summary.totals.recentAverageHr == null ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`}\n`;
+    prompt += `- 最近 7 天跑量：${formatDistance(summary.totals.recentSevenDayDistanceKm)}\n`;
+    prompt += `- 訓練穩定度：${summary.totals.consistencyScore}\n`;
+    prompt += `- 最長距離：${formatDistance(summary.totals.longestRunKm)}\n`;
+    prompt += `- 5K 最佳：${pb5k}\n`;
+    prompt += `- 10K 最佳：${pb10k}\n`;
+    prompt += `- 趨勢判讀：${summary.insight.headline}\n`;
+    prompt += `- 趨勢摘要：${summary.insight.summary}\n\n`;
+
+    prompt += `近期關鍵跑步\n`;
+
+    highlightedRuns.forEach((run, index) => {
+        const bundle = detailMap.get(run.id);
+        const splits = bundle?.detail?.splits_metric || [];
+        prompt += `${index + 1}. ${run.name}\n`;
+        prompt += `   - 日期：${run.dateLabel}\n`;
+        prompt += `   - 距離：${formatDistance(run.distanceKm)}\n`;
+        prompt += `   - 時間：${run.movingTimeLabel}\n`;
+        prompt += `   - 平均配速：${run.averagePaceLabel}\n`;
+        prompt += `   - 平均心率：${run.averageHeartrate == null ? "--" : `${run.averageHeartrate} bpm`}\n`;
+        prompt += `   - 爬升：${Math.round(run.elevationGain)} m\n`;
+
+        if (splits.length > 0) {
+            prompt += `   - 每公里 splits：\n`;
+            splits.slice(0, 8).forEach((split) => {
+                prompt += `     - ${split.split}K: ${split.average_speed ? formatPaceFromSpeed(split.average_speed) : "--"}, 心率 ${split.average_heartrate == null ? "--" : Math.round(split.average_heartrate)}, 爬升 ${Math.round(split.elevation_difference || 0)} m\n`;
+            });
+        } else {
+            prompt += `   - 每公里 splits：無\n`;
+        }
+    });
+
+    prompt += `\n請直接輸出：\n`;
+    prompt += `1. 我目前的訓練狀態判讀。\n`;
+    prompt += `2. 從配速、心率、跑量變化看出的風險或進步點。\n`;
+    prompt += `3. 下週 3 次跑步安排，包含目的、距離或時間、配速建議。\n`;
+    prompt += `4. 若你認為我恢復不足，請直接指出原因。\n`;
+
+    return prompt;
+}
+
+async function handleCopyPrompt() {
+    if (!ui.coachPrompt.value.trim()) {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(ui.coachPrompt.value);
+        ui.copyToast.classList.remove("hidden");
+        setTimeout(() => ui.copyToast.classList.add("hidden"), 1600);
+    } catch (error) {
+        setStatus(`複製失敗：${error.message}`, "error");
+    }
+}
+
+function renderEmptyDashboard() {
+    ui.monthMileage.textContent = "0.0 km";
+    ui.monthCount.textContent = "0 次跑步";
+    ui.weekMileage.textContent = "0.0 km";
+    ui.weekCount.textContent = "0 次跑步";
+    ui.recentPace.textContent = "--";
+    ui.recentHr.textContent = "--";
+    ui.pb5k.textContent = "--";
+    ui.pb5kDate.textContent = "尚無資料";
+    ui.pb10k.textContent = "--";
+    ui.pb10kDate.textContent = "尚無資料";
+    ui.trainingHeadline.textContent = "等待資料載入";
+    ui.trainingSummary.textContent = "成功連接 Strava 後，這裡會整理你的近期負荷與節奏變化。";
+    ui.recentLoad.textContent = "0.0 km";
+    ui.longestRun.textContent = "0.0 km";
+    ui.paceDelta.textContent = "--";
+    ui.consistencyScore.textContent = "--";
+    ui.runsCount.textContent = "0 筆";
+    ui.runsList.innerHTML = '<p class="empty-state">尚未載入活動資料。</p>';
+    ui.promptContainer.classList.add("hidden");
+
+    if (state.weeklyChart) {
+        state.weeklyChart.destroy();
+        state.weeklyChart = null;
+    }
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}

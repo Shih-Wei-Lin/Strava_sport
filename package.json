@@ -1,0 +1,9 @@
+{
+    "name": "sport-strava",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "check": "node --check app.js",
+        "test": "node --test tests/analytics.test.js"
+    }
+}

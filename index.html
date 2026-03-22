@@ -1,122 +1,208 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="AI教練">
-    
-    <!-- Cache-Busting Meta Tags -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-
-    <title>AI 馬拉松教練 - 你的智慧訓練夥伴</title>
-    <link rel="stylesheet" href="style.css?v=1.5">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="apple-mobile-web-app-title" content="Stride Scope">
+    <title>Stride Scope | Strava 跑步分析儀表板</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
 </head>
-
 <body>
-    <div class="background-mesh"></div>
-    <div class="container">
-        <header>
-            <h1>🏃‍♂️ AI 馬拉松教練</h1>
-            <p>連接 Apple Watch 與 Strava，一鍵產生 ChatGPT 與 Gemini 分析指令</p>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <div class="noise"></div>
+
+    <main class="app-shell">
+        <header class="hero panel">
+            <div class="hero-copy">
+                <p class="eyebrow">STRAVA PERFORMANCE STUDIO</p>
+                <h1>Stride Scope</h1>
+                <p class="hero-text">
+                    把 Strava 跑步資料整理成可讀的週期跑量、配速趨勢、心率負荷與 AI 訓練摘要。
+                </p>
+            </div>
+            <div class="hero-actions">
+                <button id="refresh-data-btn" class="btn btn-primary" type="button">重新整理資料</button>
+                <button id="logout-btn" class="btn btn-ghost" type="button">清除授權</button>
+            </div>
         </header>
 
-        <!-- 設定面板 (首次需要) -->
-        <main id="settings-section" class="glass-panel hidden">
-            <h2>⚙️ 首次設定 (Strava API Keys)</h2>
-            <p style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.95rem;">
-                因本應用為純前端架構(無後端伺服器)，您的金鑰將安全地儲存在手機瀏覽器的本地空間(localStorage)中，絕不會外洩。</p>
+        <section id="status-banner" class="status-banner hidden" aria-live="polite"></section>
 
-            <div class="form-group">
-                <label for="client-id">Strava Client ID</label>
-                <input type="text" id="client-id" placeholder="例如: 123456" inputmode="numeric" pattern="[0-9]*" autocomplete="username" />
-            </div>
-            <div class="form-group">
-                <label for="client-secret">Strava Client Secret</label>
-                <input type="password" id="client-secret" placeholder="輸入您的 Secret" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        <section id="setup-section" class="panel hidden">
+            <div class="section-heading">
+                <div>
+                    <p class="section-kicker">SETUP</p>
+                    <h2>設定 Strava API 憑證</h2>
+                </div>
+                <p class="section-description">
+                    這個版本在瀏覽器端直接交換 token，因此會把 `Client ID` 與 `Client Secret` 存在本機 `localStorage`。
+                </p>
             </div>
 
-            <button id="save-settings-btn" class="btn primary-btn" style="width: 100%; margin-top: 1rem;">💾
-                儲存設定並準備登入</button>
-            <p id="settings-msg" style="margin-top: 1rem; text-align: center; color: #4ade80; display: none;"></p>
-        </main>
-
-        <!-- 登入區塊 -->
-        <main id="auth-section" class="glass-panel hidden" style="text-align: center; padding: 3rem 2rem;">
-            <p style="margin-bottom: 2rem;">已成功載入 API 設定，點擊下方按鈕連結您的 Strava 帳號：</p>
-            <button id="login-btn" class="btn primary-btn" style="font-size: 1.2rem; padding: 1rem 2rem;">🔗 使用 Strava
-                登入</button>
-            <div style="margin-top: 2rem;">
-                <button id="reset-settings-btn" class="btn"
-                    style="background: transparent; border: 1px solid var(--glass-border); color: var(--text-secondary);">清除
-                    API 設定</button>
+            <div class="form-grid">
+                <label class="field">
+                    <span>Strava Client ID</span>
+                    <input id="client-id" type="text" inputmode="numeric" autocomplete="username" placeholder="例如 123456">
+                </label>
+                <label class="field">
+                    <span>Strava Client Secret</span>
+                    <input id="client-secret" type="password" autocomplete="current-password" placeholder="輸入你的 Client Secret">
+                </label>
             </div>
-        </main>
 
-        <!-- 訓練數據與 Prompt 生成儀表板 -->
-        <main id="dashboard" class="hidden">
-            <!-- 專業數據儀表板 -->
-            <section class="stats-dashboard">
-                <div class="stat-card mileage-card">
-                    <span class="stat-label">🗓️ 本月跑量</span>
-                    <div class="stat-value"><span id="month-mileage">0.0</span> <small>km</small></div>
-                    <div class="stat-subtext" id="month-count">0 次訓練</div>
+            <div class="inline-actions">
+                <button id="save-settings-btn" class="btn btn-primary" type="button">儲存設定</button>
+                <button id="clear-settings-btn" class="btn btn-ghost" type="button">清除設定</button>
+            </div>
+        </section>
+
+        <section id="auth-section" class="panel hidden">
+            <div class="section-heading">
+                <div>
+                    <p class="section-kicker">AUTH</p>
+                    <h2>連接 Strava</h2>
                 </div>
-                <div class="stat-card mileage-card">
-                    <span class="stat-label">👟 本週跑量</span>
-                    <div class="stat-value"><span id="week-mileage">0.0</span> <small>km</small></div>
-                    <div class="stat-subtext" id="week-count">0 次訓練</div>
+                <p class="section-description">
+                    設定完成後，授權讀取你的跑步活動與每公里分段資料。
+                </p>
+            </div>
+
+            <div class="auth-card">
+                <p class="auth-note">
+                    授權完成後會回到這個頁面並自動載入儀表板。
+                </p>
+                <div class="inline-actions">
+                    <button id="login-btn" class="btn btn-primary" type="button">連接 Strava 帳號</button>
+                    <button id="edit-settings-btn" class="btn btn-ghost" type="button">修改 API 設定</button>
                 </div>
-                <div class="stat-card pb-card">
-                    <span class="stat-label">🏆 5K 最佳</span>
-                    <div class="stat-value" id="pb-5k">--:--</div>
-                    <div class="stat-subtext" id="pb-5k-date">尚未達成</div>
+            </div>
+        </section>
+
+        <section id="dashboard" class="dashboard hidden">
+            <section class="stats-grid">
+                <article class="stat-card">
+                    <span class="stat-label">本月跑量</span>
+                    <strong id="month-mileage" class="stat-value">0.0 km</strong>
+                    <span id="month-count" class="stat-subtext">0 次跑步</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">本週跑量</span>
+                    <strong id="week-mileage" class="stat-value">0.0 km</strong>
+                    <span id="week-count" class="stat-subtext">0 次跑步</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">近期平均配速</span>
+                    <strong id="recent-pace" class="stat-value">--</strong>
+                    <span id="recent-pace-note" class="stat-subtext">最近 4 次活動</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">近期平均心率</span>
+                    <strong id="recent-hr" class="stat-value">--</strong>
+                    <span id="recent-hr-note" class="stat-subtext">最近 4 次活動</span>
+                </article>
+                <article class="stat-card accent-card">
+                    <span class="stat-label">5K 最佳表現</span>
+                    <strong id="pb-5k" class="stat-value">--</strong>
+                    <span id="pb-5k-date" class="stat-subtext">尚無資料</span>
+                </article>
+                <article class="stat-card accent-card">
+                    <span class="stat-label">10K 最佳表現</span>
+                    <strong id="pb-10k" class="stat-value">--</strong>
+                    <span id="pb-10k-date" class="stat-subtext">尚無資料</span>
+                </article>
+            </section>
+
+            <section class="analysis-grid">
+                <article class="panel insight-panel">
+                    <div class="section-heading compact">
+                        <div>
+                            <p class="section-kicker">ANALYSIS</p>
+                            <h2 id="training-headline">等待資料載入</h2>
+                        </div>
+                    </div>
+                    <p id="training-summary" class="analysis-copy">
+                        成功連接 Strava 後，這裡會整理你的近期負荷與節奏變化。
+                    </p>
+                    <div class="chip-grid">
+                        <div class="insight-chip">
+                            <span>最近 7 天</span>
+                            <strong id="recent-load">0.0 km</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>最長距離</span>
+                            <strong id="longest-run">0.0 km</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>配速變化</span>
+                            <strong id="pace-delta">--</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>訓練穩定度</span>
+                            <strong id="consistency-score">--</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="section-heading compact">
+                        <div>
+                            <p class="section-kicker">TREND</p>
+                            <h2>六週跑量趨勢</h2>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="weekly-chart" aria-label="六週跑量圖表"></canvas>
+                    </div>
+                </article>
+            </section>
+
+            <section class="panel runs-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="section-kicker">RUNS</p>
+                        <h2>近期跑步活動</h2>
+                    </div>
+                    <span id="runs-count" class="section-meta">0 筆</span>
                 </div>
-                <div class="stat-card pb-card">
-                    <span class="stat-label">🏆 10K 最佳</span>
-                    <div class="stat-value" id="pb-10k">--:--</div>
-                    <div class="stat-subtext" id="pb-10k-date">尚未達成</div>
+                <div id="runs-list" class="runs-list">
+                    <p class="empty-state">尚未載入活動資料。</p>
                 </div>
             </section>
 
-            <section class="runs-section glass-panel">
-                <h2>📈 最近的訓練紀錄</h2>
-                <div id="runs-list" class="runs-container">
-                    <p class="loading">載入訓練資料中...</p>
+            <section class="panel prompt-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="section-kicker">AI SUMMARY</p>
+                        <h2>教練提示詞</h2>
+                    </div>
+                    <p class="section-description">
+                        整合週期跑量、近期關鍵課表與分段資料，方便直接丟給 ChatGPT 或 Gemini。
+                    </p>
+                </div>
+
+                <div class="inline-actions">
+                    <button id="get-openai-btn" class="btn btn-primary" type="button">產生 ChatGPT Prompt</button>
+                    <button id="get-gemini-btn" class="btn btn-ghost" type="button">產生 Gemini Prompt</button>
+                </div>
+
+                <div id="prompt-container" class="prompt-box hidden">
+                    <textarea id="coach-prompt" rows="12" readonly placeholder="按下按鈕後會在這裡生成提示詞。"></textarea>
+                    <div class="inline-actions">
+                        <button id="copy-btn" class="btn btn-primary" type="button">複製提示詞</button>
+                        <span id="copy-toast" class="copy-toast hidden">已複製到剪貼簿</span>
+                    </div>
                 </div>
             </section>
+        </section>
+    </main>
 
-            <section class="coach-section glass-panel">
-                <h2>📋 任務提示詞生成器 (Prompt)</h2>
-                <p style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.95rem;">
-                    點擊下方按鈕，自動彙整您的近期跑步數據生成專屬 Prompt，複製後可直接貼到手機版 ChatGPT 或 Gemini App 中使用。</p>
-                <div class="ai-controls">
-                    <button id="get-openai-btn" class="btn ai-btn has-glow">🧠 產生 ChatGPT Prompt</button>
-                    <button id="get-gemini-btn" class="btn ai-btn has-glow">⚡ 產生 Gemini Prompt</button>
-                </div>
-                <div id="prompt-container" class="feedback-box hidden" style="position: relative;">
-                    <textarea id="coach-prompt" rows="8"
-                        style="width: 100%; width: -moz-available; width: -webkit-fill-available; background: transparent; color: white; border: none; resize: vertical; margin-bottom: 1rem; font-family: inherit; font-size: 1rem;"
-                        readonly></textarea>
-                    <button id="copy-btn" class="btn primary-btn"
-                        style="width: 100%; background: var(--accent-color);">📋 一鍵複製到剪貼簿</button>
-                    <div id="copy-toast" style="display: none; text-align: center; color: #4ade80; margin-top: 0.5rem;">
-                        ✅ 已複製！現在可以去開啟你的 AI App 囉</div>
-                </div>
-            </section>
-        </main>
-    </div>
-
-    <script src="app.js?v=1.5"></script>
+    <script type="module" src="app.js"></script>
 </body>
-
-</html>
-</body>
-
 </html>
