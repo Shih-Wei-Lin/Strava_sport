@@ -809,16 +809,27 @@ function renderTopStats(summary) {
     ui.recentHr.textContent =
         summary.totals.recentAverageHr == null ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`;
     ui.recentHrNote.textContent = "最近 4 次活動";
-    ui.acwrScore.textContent = formatAcwr(summary.totals.acuteChronicRatio);
-    ui.acwrNote.textContent = explainAcwr(summary.totals.acuteChronicRatio);
-    ui.efficiencyScore.textContent = formatEfficiencyIndex(summary.totals.efficiencyIndex);
-    ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
-    ui.recentCadence.textContent =
-        summary.totals.recentCadence == null ? "--" : `${summary.totals.recentCadence.toFixed(1)} spm`;
-    ui.recentCadenceNote.textContent = "最近 6 次活動";
-    ui.elevationDensity.textContent =
-        summary.totals.elevationPerKm == null ? "--" : `${summary.totals.elevationPerKm.toFixed(1)} m/km`;
-    ui.elevationDensityNote.textContent = "最近 6 次平均每公里爬升";
+    if (ui.acwrScore && ui.acwrNote) {
+        ui.acwrScore.textContent = formatAcwr(summary.totals.acuteChronicRatio);
+        ui.acwrNote.textContent = explainAcwr(summary.totals.acuteChronicRatio);
+    }
+
+    if (ui.efficiencyScore && ui.efficiencyNote) {
+        ui.efficiencyScore.textContent = formatEfficiencyIndex(summary.totals.efficiencyIndex);
+        ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
+    }
+
+    if (ui.recentCadence && ui.recentCadenceNote) {
+        ui.recentCadence.textContent =
+            summary.totals.recentCadence == null ? "--" : `${summary.totals.recentCadence.toFixed(1)} spm`;
+        ui.recentCadenceNote.textContent = "最近 6 次活動";
+    }
+
+    if (ui.elevationDensity && ui.elevationDensityNote) {
+        ui.elevationDensity.textContent =
+            summary.totals.elevationPerKm == null ? "--" : `${summary.totals.elevationPerKm.toFixed(1)} m/km`;
+        ui.elevationDensityNote.textContent = "最近 6 次平均每公里爬升";
+    }
 
     renderBestEffort(ui.pb1k, ui.pb1kDate, getDisplayBestEffort(summary, "1K"), "尚未找到可用的 1K 區段");
     renderBestEffort(ui.pb3k, ui.pb3kDate, getDisplayBestEffort(summary, "3K"), "尚未找到可用的 3K 區段");
@@ -895,6 +906,10 @@ function formatEfficiencyIndex(value) {
 }
 
 function renderBestEffort(valueNode, subtextNode, effort, emptyText) {
+    if (!valueNode || !subtextNode) {
+        return;
+    }
+
     if (!effort) {
         valueNode.textContent = "--";
         subtextNode.textContent = emptyText;
@@ -913,12 +928,22 @@ function renderInsight(summary) {
     ui.longestRun.textContent = formatDistance(summary.totals.longestRunKm);
     ui.paceDelta.textContent = formatDeltaPace(summary.insight.paceDeltaSec);
     ui.consistencyScore.textContent = summary.totals.consistencyScore;
-    ui.avgRunDistance.textContent = formatDistance(summary.totals.averageRunDistanceKm);
-    ui.avgRunDuration.textContent =
-        summary.totals.averageRunDurationSec == null ? "--" : formatDuration(summary.totals.averageRunDurationSec);
-    ui.qualityRunRatio.textContent = formatPercentage(summary.totals.qualityRunRatio);
-    ui.hrDeltaTrend.textContent = formatHrDelta(summary.totals.hrDeltaBpm);
-    ui.longRunShare.textContent = formatPercentage(summary.totals.longRunSharePercent);
+    if (ui.avgRunDistance) {
+        ui.avgRunDistance.textContent = formatDistance(summary.totals.averageRunDistanceKm);
+    }
+    if (ui.avgRunDuration) {
+        ui.avgRunDuration.textContent =
+            summary.totals.averageRunDurationSec == null ? "--" : formatDuration(summary.totals.averageRunDurationSec);
+    }
+    if (ui.qualityRunRatio) {
+        ui.qualityRunRatio.textContent = formatPercentage(summary.totals.qualityRunRatio);
+    }
+    if (ui.hrDeltaTrend) {
+        ui.hrDeltaTrend.textContent = formatHrDelta(summary.totals.hrDeltaBpm);
+    }
+    if (ui.longRunShare) {
+        ui.longRunShare.textContent = formatPercentage(summary.totals.longRunSharePercent);
+    }
 }
 
 /**
@@ -1947,18 +1972,30 @@ function renderEmptyDashboard() {
     ui.recentPaceNote.textContent = "最近 4 次活動";
     ui.recentHr.textContent = "--";
     ui.recentHrNote.textContent = "最近 4 次活動";
-    ui.acwrScore.textContent = "--";
-    ui.acwrNote.textContent = "7 天 / 28 天週均跑量";
-    ui.efficiencyScore.textContent = "--";
-    ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
-    ui.recentCadence.textContent = "--";
-    ui.recentCadenceNote.textContent = "最近 6 次活動";
-    ui.elevationDensity.textContent = "--";
-    ui.elevationDensityNote.textContent = "最近 6 次平均每公里爬升";
-    ui.pb1k.textContent = "--";
-    ui.pb1kDate.textContent = "尚無資料";
-    ui.pb3k.textContent = "--";
-    ui.pb3kDate.textContent = "尚無資料";
+    if (ui.acwrScore && ui.acwrNote) {
+        ui.acwrScore.textContent = "--";
+        ui.acwrNote.textContent = "7 天 / 28 天週均跑量";
+    }
+    if (ui.efficiencyScore && ui.efficiencyNote) {
+        ui.efficiencyScore.textContent = "--";
+        ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
+    }
+    if (ui.recentCadence && ui.recentCadenceNote) {
+        ui.recentCadence.textContent = "--";
+        ui.recentCadenceNote.textContent = "最近 6 次活動";
+    }
+    if (ui.elevationDensity && ui.elevationDensityNote) {
+        ui.elevationDensity.textContent = "--";
+        ui.elevationDensityNote.textContent = "最近 6 次平均每公里爬升";
+    }
+    if (ui.pb1k && ui.pb1kDate) {
+        ui.pb1k.textContent = "--";
+        ui.pb1kDate.textContent = "尚無資料";
+    }
+    if (ui.pb3k && ui.pb3kDate) {
+        ui.pb3k.textContent = "--";
+        ui.pb3kDate.textContent = "尚無資料";
+    }
     ui.pb5k.textContent = "--";
     ui.pb5kDate.textContent = "尚無資料";
     ui.pb10k.textContent = "--";
@@ -1969,11 +2006,21 @@ function renderEmptyDashboard() {
     ui.longestRun.textContent = "0.0 km";
     ui.paceDelta.textContent = "--";
     ui.consistencyScore.textContent = "--";
-    ui.avgRunDistance.textContent = "--";
-    ui.avgRunDuration.textContent = "--";
-    ui.qualityRunRatio.textContent = "--";
-    ui.hrDeltaTrend.textContent = "--";
-    ui.longRunShare.textContent = "--";
+    if (ui.avgRunDistance) {
+        ui.avgRunDistance.textContent = "--";
+    }
+    if (ui.avgRunDuration) {
+        ui.avgRunDuration.textContent = "--";
+    }
+    if (ui.qualityRunRatio) {
+        ui.qualityRunRatio.textContent = "--";
+    }
+    if (ui.hrDeltaTrend) {
+        ui.hrDeltaTrend.textContent = "--";
+    }
+    if (ui.longRunShare) {
+        ui.longRunShare.textContent = "--";
+    }
     ui.abilityModel.textContent = "VDOT";
     ui.abilityScore.textContent = "--";
     ui.predictionSource.textContent = "等待資料分析";
