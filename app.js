@@ -1554,6 +1554,7 @@ async function downloadRunJson(runId, button) {
     const normalizedRunId = Number(runId);
     const run = state.summary?.runs.find((entry) => Number(entry.id) === normalizedRunId);
     if (!run) {
+        setStatus("找不到此活動，請重新整理後再試。", "error");
         return;
     }
 
@@ -1561,29 +1562,14 @@ async function downloadRunJson(runId, button) {
     button.textContent = "整理中...";
 
     try {
-        const bundle = state.detailCache.has(normalizedRunId)
-            ? state.detailCache.get(normalizedRunId)
-            : await fetchRunDetailBundle(normalizedRunId);
-        state.detailCache.set(normalizedRunId, bundle);
-
-        const payload = {
-            activity_id: run.id,
-            name: run.name,
-            summary: {
-                date: run.dateLabel,
-                distance_km: Number(run.distanceKm.toFixed(2)),
-                moving_time_seconds: run.movingTimeSec,
-                average_pace: run.averagePaceLabel,
-                average_heartrate: run.averageHeartrate,
-                total_elevation_gain_m: Math.round(run.elevationGain),
-            },
-            detail: bundle.detail,
-            streams: bundle.streams,
-        };
-
+        const singleAggregate = await buildAggregateExportData([run]);
+        const payload = singleAggregate.runs[0] || buildRunExportPayload(run, null);
         const datedFilename = `${formatDateForFilename(run.startedAt)}_${slugifyFilename(run.name)}.json`;
+
         downloadJson(payload, datedFilename);
         button.textContent = "已下載";
+        setStatus("單次活動 JSON 已下載。", "success");
+
         setTimeout(() => {
             button.disabled = false;
             button.textContent = "下載 JSON";
@@ -1592,10 +1578,41 @@ async function downloadRunJson(runId, button) {
         console.error(error);
         button.disabled = false;
         button.textContent = "下載失敗";
+        setStatus("下載失敗，請稍後再試。", "error");
         setTimeout(() => {
             button.textContent = "下載 JSON";
         }, 1400);
     }
+}
+
+/**
+ * Build a single-run export payload with optional detail/stream sections.
+ *
+ * Parameters:
+ * - run (object): Normalized summary run object used in dashboard state.
+ * - bundle (object|null): Optional run detail bundle containing detail and streams.
+ *
+ * Returns:
+ * - object: JSON-ready export payload.
+ *
+ * Raises:
+ * - No explicit throw. Missing detail data is exported as null/empty structures.
+ */
+function buildRunExportPayload(run, bundle) {
+    return {
+        activity_id: run.id,
+        name: run.name,
+        summary: {
+            date: run.dateLabel,
+            distance_km: Number(run.distanceKm.toFixed(2)),
+            moving_time_seconds: run.movingTimeSec,
+            average_pace: run.averagePaceLabel,
+            average_heartrate: run.averageHeartrate,
+            total_elevation_gain_m: Math.round(run.elevationGain),
+        },
+        detail: bundle?.detail || null,
+        streams: bundle?.streams || {},
+    };
 }
 
 /**
