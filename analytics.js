@@ -1,3 +1,7 @@
+const ONE_K_MIN = 0.95;
+const ONE_K_MAX = 1.1;
+const THREE_K_MIN = 2.8;
+const THREE_K_MAX = 3.3;
 const FIVE_K_MIN = 4.8;
 const FIVE_K_MAX = 5.3;
 const TEN_K_MIN = 9.5;
@@ -229,6 +233,90 @@ function buildConsistencyScore(runs, now) {
     );
 
     return `${Math.round((activeDays.size / 28) * 100)}%`;
+}
+
+/**
+ * Build advanced training metrics for higher-level running analysis.
+ *
+ * Parameters:
+ * - runs (Array<object>): Normalized run list sorted by date (newest first).
+ * - now (Date): Current reference date.
+ *
+ * Returns:
+ * - object: Advanced metrics including ACWR, efficiency index, cadence, and elevation density.
+ *
+ * Raises:
+ * - No explicit throw. Invalid values are normalized to null-safe defaults.
+ */
+function buildAdvancedMetrics(runs, now) {
+    const recentWindow = runs.slice(0, 6);
+    const sevenDaysAgo = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
+    const twentyEightDaysAgo = startOfDay(new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000));
+
+    const acuteRuns = runs.filter((run) => run.startedAt >= sevenDaysAgo);
+    const chronicRuns = runs.filter((run) => run.startedAt >= twentyEightDaysAgo);
+    const acuteLoadKm = sumDistance(acuteRuns);
+    const chronicWeeklyAvgKm = sumDistance(chronicRuns) / 4;
+    const acwr = chronicWeeklyAvgKm > 0 ? acuteLoadKm / chronicWeeklyAvgKm : null;
+
+    const efficiencyPairs = recentWindow
+        .filter((run) => Number.isFinite(run.averageSpeed) && Number.isFinite(run.averageHeartrate) && run.averageHeartrate > 0)
+        .map((run) => (run.averageSpeed * 100) / run.averageHeartrate);
+
+    const totalDistance = sumDistance(recentWindow);
+    const totalElevation = recentWindow.reduce((sum, run) => sum + toNumber(run.elevationGain), 0);
+
+    return {
+        acuteChronicRatio: acwr == null ? null : Number(acwr.toFixed(2)),
+        efficiencyIndex: average(efficiencyPairs),
+        recentCadence: average(recentWindow.map((run) => run.cadence)),
+        elevationPerKm: totalDistance > 0 ? totalElevation / totalDistance : null,
+    };
+}
+
+/**
+ * Build distribution and quality metrics for intuitive training status review.
+ *
+ * Parameters:
+ * - runs (Array<object>): Normalized run list sorted by date (newest first).
+ * - now (Date): Current reference date.
+ *
+ * Returns:
+ * - object: Summary metrics including average run distance, quality ratio, HR delta, and long-run share.
+ *
+ * Raises:
+ * - No explicit throw. Metrics gracefully degrade to null-safe values.
+ */
+function buildTrainingDistributionMetrics(runs, now) {
+    const twentyEightDaysAgo = startOfDay(new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000));
+    const monthRuns = runs.filter((run) => run.startedAt >= twentyEightDaysAgo);
+    const recentRuns = runs.slice(0, 4);
+    const previousRuns = runs.slice(4, 8);
+
+    const averageDistanceKm = average(monthRuns.map((run) => run.distanceKm));
+    const averageDurationSec = average(monthRuns.map((run) => run.movingTimeSec));
+    const medianPace = median(monthRuns.map((run) => run.averagePaceSec));
+    const qualityRuns =
+        medianPace == null
+            ? []
+            : monthRuns.filter((run) => Number.isFinite(run.averagePaceSec) && run.averagePaceSec <= medianPace * 0.97);
+    const qualityRunRatio = monthRuns.length > 0 ? (qualityRuns.length / monthRuns.length) * 100 : null;
+
+    const recentHr = average(recentRuns.map((run) => run.averageHeartrate));
+    const previousHr = average(previousRuns.map((run) => run.averageHeartrate));
+    const hrDeltaBpm = recentHr != null && previousHr != null ? recentHr - previousHr : null;
+
+    const totalDistance = sumDistance(monthRuns);
+    const longestRun = monthRuns.reduce((best, run) => (best == null || run.distanceKm > best.distanceKm ? run : best), null);
+    const longRunSharePercent = totalDistance > 0 && longestRun ? (longestRun.distanceKm / totalDistance) * 100 : null;
+
+    return {
+        averageDistanceKm,
+        averageDurationSec,
+        qualityRunRatio,
+        hrDeltaBpm,
+        longRunSharePercent,
+    };
 }
 
 function selectComparableRuns(runs) {
@@ -594,11 +682,16 @@ export function summariseActivities(activities, now = new Date()) {
 
     const fullRun5k = pickBestFullRunEffort(runs, FIVE_K_MIN, FIVE_K_MAX);
     const fullRun10k = pickBestFullRunEffort(runs, TEN_K_MIN, TEN_K_MAX);
+    const fullRun1k = pickBestFullRunEffort(runs, ONE_K_MIN, ONE_K_MAX);
+    const fullRun3k = pickBestFullRunEffort(runs, THREE_K_MIN, THREE_K_MAX);
     const prediction = buildAbilityPrediction([
+        fullRun3k,
         fullRun5k,
         fullRun10k,
         ...recentFullEfforts.filter((run) => run.distanceKm >= 3 && run.distanceKm <= 21.1).slice(0, 16),
     ]);
+    const advanced = buildAdvancedMetrics(runs, now);
+    const distribution = buildTrainingDistributionMetrics(runs, now);
 
     return {
         runs,
@@ -612,10 +705,23 @@ export function summariseActivities(activities, now = new Date()) {
             recentSevenDayDistanceKm: Number(sumDistance(recentSevenDayRuns).toFixed(1)),
             longestRunKm: longestRun ? Number(longestRun.distanceKm.toFixed(1)) : 0,
             consistencyScore: buildConsistencyScore(runs, now),
+            acuteChronicRatio: advanced.acuteChronicRatio,
+            efficiencyIndex: advanced.efficiencyIndex,
+            recentCadence: advanced.recentCadence,
+            elevationPerKm: advanced.elevationPerKm,
+            averageRunDistanceKm: distribution.averageDistanceKm,
+            averageRunDurationSec: distribution.averageDurationSec,
+            qualityRunRatio: distribution.qualityRunRatio,
+            hrDeltaBpm: distribution.hrDeltaBpm,
+            longRunSharePercent: distribution.longRunSharePercent,
         },
         bests: {
+            fullRun1k,
+            fullRun3k,
             fullRun5k,
             fullRun10k,
+            segment1k: null,
+            segment3k: null,
             segment5k: null,
             segment10k: null,
         },
