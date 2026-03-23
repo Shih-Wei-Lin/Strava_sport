@@ -1427,7 +1427,8 @@ function renderRunChart(canvasId, streams) {
  * - No explicit throw. Errors are handled internally and reflected in button state.
  */
 async function downloadRunJson(runId, button) {
-    const run = state.summary?.runs.find((entry) => entry.id === runId);
+    const normalizedRunId = String(runId);
+    const run = state.summary?.runs.find((entry) => String(entry.id) === normalizedRunId);
     if (!run) {
         return;
     }
@@ -1436,8 +1437,10 @@ async function downloadRunJson(runId, button) {
     button.textContent = "整理中...";
 
     try {
-        const bundle = state.detailCache.has(runId) ? state.detailCache.get(runId) : await fetchRunDetailBundle(runId);
-        state.detailCache.set(runId, bundle);
+        const bundle = state.detailCache.has(normalizedRunId)
+            ? state.detailCache.get(normalizedRunId)
+            : await fetchRunDetailBundle(normalizedRunId);
+        state.detailCache.set(normalizedRunId, bundle);
 
         const payload = {
             activity_id: run.id,
