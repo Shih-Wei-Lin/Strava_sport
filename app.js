@@ -999,14 +999,17 @@ async function enrichPerformanceInsights(enrichmentRunId) {
     }
 
     const candidateRuns = state.summary.runs
-        .filter((run) => run.distanceKm >= 5 && run.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
+        .filter((run) => run.distanceKm >= 1 && run.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
         .slice(0, 40);
 
     if (candidateRuns.length === 0) {
         return;
     }
 
-    setStatus(`已載入 ${state.summary.runs.length} 筆活動，正在分析最近 ${candidateRuns.length} 筆活動的連續 5K / 10K 區段...`, "info");
+    setStatus(
+        `已載入 ${state.summary.runs.length} 筆活動，正在分析最近 ${candidateRuns.length} 筆活動的連續 1K / 3K / 5K / 10K 區段...`,
+        "info",
+    );
 
     const batchSize = 4;
 
@@ -1055,7 +1058,7 @@ async function enrichPerformanceInsights(enrichmentRunId) {
     }
 
     if (enrichmentRunId === state.enrichmentRunId) {
-        setStatus("已完成連續 5K / 10K 區段分析，成績預測已更新。", "success");
+        setStatus("已完成連續 1K / 3K / 5K / 10K 區段分析，成績預測已更新。", "success");
     }
 }
 
