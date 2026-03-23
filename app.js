@@ -31,6 +31,12 @@ const state = {
 };
 
 const RUNS_PER_PAGE = 10;
+const APP_DB_NAME = "stride_scope_db";
+const APP_DB_VERSION = 1;
+const APP_DB_STORES = {
+    runs: "run_activities",
+    bundles: "run_bundles",
+};
 
 const ui = {};
 
@@ -64,6 +70,18 @@ function bindUi() {
     ui.recentPaceNote = document.getElementById("recent-pace-note");
     ui.recentHr = document.getElementById("recent-hr");
     ui.recentHrNote = document.getElementById("recent-hr-note");
+    ui.acwrScore = document.getElementById("acwr-score");
+    ui.acwrNote = document.getElementById("acwr-note");
+    ui.efficiencyScore = document.getElementById("efficiency-score");
+    ui.efficiencyNote = document.getElementById("efficiency-note");
+    ui.recentCadence = document.getElementById("recent-cadence");
+    ui.recentCadenceNote = document.getElementById("recent-cadence-note");
+    ui.elevationDensity = document.getElementById("elevation-density");
+    ui.elevationDensityNote = document.getElementById("elevation-density-note");
+    ui.pb1k = document.getElementById("pb-1k");
+    ui.pb1kDate = document.getElementById("pb-1k-date");
+    ui.pb3k = document.getElementById("pb-3k");
+    ui.pb3kDate = document.getElementById("pb-3k-date");
     ui.pb5k = document.getElementById("pb-5k");
     ui.pb5kDate = document.getElementById("pb-5k-date");
     ui.pb10k = document.getElementById("pb-10k");
@@ -75,6 +93,11 @@ function bindUi() {
     ui.longestRun = document.getElementById("longest-run");
     ui.paceDelta = document.getElementById("pace-delta");
     ui.consistencyScore = document.getElementById("consistency-score");
+    ui.avgRunDistance = document.getElementById("avg-run-distance");
+    ui.avgRunDuration = document.getElementById("avg-run-duration");
+    ui.qualityRunRatio = document.getElementById("quality-run-ratio");
+    ui.hrDeltaTrend = document.getElementById("hr-delta-trend");
+    ui.longRunShare = document.getElementById("long-run-share");
 
     ui.abilityModel = document.getElementById("ability-model");
     ui.abilityScore = document.getElementById("ability-score");
@@ -168,6 +191,18 @@ function hydrateSettingsInputs() {
     ui.clientSecretInput.value = localStorage.getItem(STORAGE_KEYS.clientSecret) || "";
 }
 
+/**
+ * Persist API credentials, clear tokens, and move UI to auth stage.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - void: This handler performs side effects only.
+ *
+ * Raises:
+ * - No explicit throw. Invalid input is handled via status messages.
+ */
 function handleSaveSettings() {
     const clientId = ui.clientIdInput.value.trim();
     const clientSecret = ui.clientSecretInput.value.trim();
@@ -184,24 +219,52 @@ function handleSaveSettings() {
     showAuthState();
 }
 
+/**
+ * Remove credentials, tokens, and local cache, then reset dashboard state.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - void: This handler performs side effects only.
+ *
+ * Raises:
+ * - No explicit throw. Cache cleanup is fire-and-forget.
+ */
 function handleClearSettings() {
     localStorage.removeItem(STORAGE_KEYS.clientId);
     localStorage.removeItem(STORAGE_KEYS.clientSecret);
     localStorage.removeItem(STORAGE_KEYS.athleteName);
     clearTokenStorage();
+    state.detailCache.clear();
     hydrateSettingsInputs();
     state.summary = null;
     renderEmptyDashboard();
     showSetupState(false);
     setStatus("已清除 API 設定與授權資料。", "success");
+    void clearCachedDatabase();
 }
 
+/**
+ * Clear token/session state and reset UI to authentication stage.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - void: This handler performs side effects only.
+ *
+ * Raises:
+ * - No explicit throw. Cache cleanup is fire-and-forget.
+ */
 function handleLogout() {
     clearTokenStorage();
+    state.detailCache.clear();
     state.summary = null;
     renderEmptyDashboard();
     showAuthState();
     setStatus("已清除本機授權 token，需要重新連接 Strava。", "success");
+    void clearCachedDatabase();
 }
 
 function setActionState(isReady) {
@@ -270,6 +333,99 @@ function getTokenData() {
         refreshToken: localStorage.getItem(STORAGE_KEYS.refreshToken) || "",
         expiresAt: Number(localStorage.getItem(STORAGE_KEYS.expiresAt) || 0),
     };
+}
+
+/**
+ * Load cached run activities from IndexedDB.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - Promise<Array<object>>: Cached activities array, or an empty array.
+ *
+ * Raises:
+ * - No explicit throw. Errors are swallowed and treated as cache miss.
+ */
+async function loadCachedRuns() {
+    try {
+        const record = await readDbRecord(APP_DB_STORES.runs, "all_runs");
+        return Array.isArray(record?.activities) ? record.activities : [];
+    } catch (error) {
+        console.warn("Failed to read cached runs", error);
+        return [];
+    }
+}
+
+/**
+ * Persist run activities into IndexedDB.
+ *
+ * Parameters:
+ * - activities (Array<object>): Run activities payload from Strava.
+ *
+ * Returns:
+ * - Promise<void>: Resolves when the cache write finishes.
+ *
+ * Raises:
+ * - No explicit throw. Errors are logged and ignored.
+ */
+async function saveCachedRuns(activities) {
+    try {
+        await writeDbRecord(APP_DB_STORES.runs, {
+            key: "all_runs",
+            savedAt: new Date().toISOString(),
+            activities,
+        });
+    } catch (error) {
+        console.warn("Failed to cache runs", error);
+    }
+}
+
+/**
+ * Load a cached run detail bundle by run id.
+ *
+ * Parameters:
+ * - runId (number): Strava activity id.
+ *
+ * Returns:
+ * - Promise<object|null>: Cached detail bundle or null.
+ *
+ * Raises:
+ * - No explicit throw. Errors are swallowed and treated as cache miss.
+ */
+async function loadCachedRunBundle(runId) {
+    try {
+        const record = await readDbRecord(APP_DB_STORES.bundles, runId);
+        return record?.bundle || null;
+    } catch (error) {
+        console.warn("Failed to read cached run bundle", runId, error);
+        return null;
+    }
+}
+
+/**
+ * Persist one run detail bundle into IndexedDB.
+ *
+ * Parameters:
+ * - runId (number): Strava activity id.
+ * - bundle (object): Detail and streams payload.
+ *
+ * Returns:
+ * - Promise<void>: Resolves when the cache write finishes.
+ *
+ * Raises:
+ * - No explicit throw. Errors are logged and ignored.
+ */
+async function saveCachedRunBundle(runId, bundle) {
+    try {
+        await writeDbRecord(APP_DB_STORES.bundles, {
+            runId,
+            savedAt: new Date().toISOString(),
+            bundle,
+        });
+    } catch (error) {
+        console.warn("Failed to cache run bundle", runId, error);
+    }
 }
 
 function clearTokenStorage() {
@@ -430,36 +586,60 @@ async function loadDashboard() {
     }
 }
 
+/**
+ * Fetch run activities from Strava with IndexedDB fallback cache.
+ *
+ * Parameters:
+ * - token (string): Valid Strava access token.
+ *
+ * Returns:
+ * - Promise<Array<object>>: Run activities from API or local cache.
+ *
+ * Raises:
+ * - Error: Propagates network/API errors when cache is unavailable.
+ */
 async function fetchRunActivities(token) {
+    const cachedRuns = await loadCachedRuns();
     const activities = [];
     const perPage = 100;
 
-    for (let page = 1; page <= 4; page += 1) {
-        const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
+    try {
+        for (let page = 1; page <= 4; page += 1) {
+            const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
 
-        if (response.status === 401) {
-            clearTokenStorage();
-            throw new Error("Strava access token 已失效，請重新授權。");
+            if (response.status === 401) {
+                clearTokenStorage();
+                throw new Error("Strava access token 已失效，請重新授權。");
+            }
+
+            if (!response.ok) {
+                throw new Error(`Strava activities API 錯誤 (${response.status})。`);
+            }
+
+            const pageData = await response.json();
+            if (!Array.isArray(pageData) || pageData.length === 0) {
+                break;
+            }
+
+            activities.push(...pageData);
+            if (pageData.length < perPage) {
+                break;
+            }
         }
 
-        if (!response.ok) {
-            throw new Error(`Strava activities API 錯誤 (${response.status})。`);
+        const filteredRuns = activities.filter((activity) => activity.type === "Run" || activity.sport_type === "Run");
+        await saveCachedRuns(filteredRuns);
+        return filteredRuns;
+    } catch (error) {
+        if (cachedRuns.length > 0) {
+            setStatus(`Strava API 暫時不可用，改用本機快取資料（${cachedRuns.length} 筆）。`, "info");
+            return cachedRuns;
         }
 
-        const pageData = await response.json();
-        if (!Array.isArray(pageData) || pageData.length === 0) {
-            break;
-        }
-
-        activities.push(...pageData);
-        if (pageData.length < perPage) {
-            break;
-        }
+        throw error;
     }
-
-    return activities.filter((activity) => activity.type === "Run" || activity.sport_type === "Run");
 }
 
 function renderDashboard(summary) {
@@ -472,6 +652,14 @@ function renderDashboard(summary) {
 }
 
 function getDisplayBestEffort(summary, target) {
+    if (target === "1K") {
+        return summary.bests.segment1k || summary.bests.fullRun1k;
+    }
+
+    if (target === "3K") {
+        return summary.bests.segment3k || summary.bests.fullRun3k;
+    }
+
     if (target === "5K") {
         return summary.bests.segment5k || summary.bests.fullRun5k;
     }
@@ -490,12 +678,107 @@ function renderTopStats(summary) {
     ui.recentHr.textContent =
         summary.totals.recentAverageHr == null ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`;
     ui.recentHrNote.textContent = "最近 4 次活動";
+    if (ui.acwrScore && ui.acwrNote) {
+        ui.acwrScore.textContent = formatAcwr(summary.totals.acuteChronicRatio);
+        ui.acwrNote.textContent = explainAcwr(summary.totals.acuteChronicRatio);
+    }
 
+    if (ui.efficiencyScore && ui.efficiencyNote) {
+        ui.efficiencyScore.textContent = formatEfficiencyIndex(summary.totals.efficiencyIndex);
+        ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
+    }
+
+    if (ui.recentCadence && ui.recentCadenceNote) {
+        ui.recentCadence.textContent =
+            summary.totals.recentCadence == null ? "--" : `${summary.totals.recentCadence.toFixed(1)} spm`;
+        ui.recentCadenceNote.textContent = "最近 6 次活動";
+    }
+
+    if (ui.elevationDensity && ui.elevationDensityNote) {
+        ui.elevationDensity.textContent =
+            summary.totals.elevationPerKm == null ? "--" : `${summary.totals.elevationPerKm.toFixed(1)} m/km`;
+        ui.elevationDensityNote.textContent = "最近 6 次平均每公里爬升";
+    }
+
+    renderBestEffort(ui.pb1k, ui.pb1kDate, getDisplayBestEffort(summary, "1K"), "尚未找到可用的 1K 區段");
+    renderBestEffort(ui.pb3k, ui.pb3kDate, getDisplayBestEffort(summary, "3K"), "尚未找到可用的 3K 區段");
     renderBestEffort(ui.pb5k, ui.pb5kDate, getDisplayBestEffort(summary, "5K"), "尚未找到可用的 5K 區段");
     renderBestEffort(ui.pb10k, ui.pb10kDate, getDisplayBestEffort(summary, "10K"), "尚未找到可用的 10K 區段");
 }
 
+/**
+ * Format Acute:Chronic Workload Ratio for dashboard display.
+ *
+ * Parameters:
+ * - ratio (number|null): ACWR numeric value.
+ *
+ * Returns:
+ * - string: Formatted ratio text or placeholder.
+ *
+ * Raises:
+ * - No explicit throw. Invalid values return "--".
+ */
+function formatAcwr(ratio) {
+    if (!Number.isFinite(ratio)) {
+        return "--";
+    }
+
+    return ratio.toFixed(2);
+}
+
+/**
+ * Explain ACWR zone based on sports-science common guidance ranges.
+ *
+ * Parameters:
+ * - ratio (number|null): ACWR numeric value.
+ *
+ * Returns:
+ * - string: A short interpretation label for the current ratio.
+ *
+ * Raises:
+ * - No explicit throw. Invalid values return fallback guidance.
+ */
+function explainAcwr(ratio) {
+    if (!Number.isFinite(ratio)) {
+        return "資料不足";
+    }
+
+    if (ratio < 0.8) {
+        return "偏低（可逐步加量）";
+    }
+
+    if (ratio <= 1.3) {
+        return "合理區間";
+    }
+
+    return "偏高（注意恢復）";
+}
+
+/**
+ * Format efficiency index for dashboard display.
+ *
+ * Parameters:
+ * - value (number|null): Efficiency value in scaled speed-heart-rate units.
+ *
+ * Returns:
+ * - string: Display string with 2 decimals or placeholder.
+ *
+ * Raises:
+ * - No explicit throw. Invalid values return "--".
+ */
+function formatEfficiencyIndex(value) {
+    if (!Number.isFinite(value)) {
+        return "--";
+    }
+
+    return value.toFixed(2);
+}
+
 function renderBestEffort(valueNode, subtextNode, effort, emptyText) {
+    if (!valueNode || !subtextNode) {
+        return;
+    }
+
     if (!effort) {
         valueNode.textContent = "--";
         subtextNode.textContent = emptyText;
@@ -514,6 +797,67 @@ function renderInsight(summary) {
     ui.longestRun.textContent = formatDistance(summary.totals.longestRunKm);
     ui.paceDelta.textContent = formatDeltaPace(summary.insight.paceDeltaSec);
     ui.consistencyScore.textContent = summary.totals.consistencyScore;
+    if (ui.avgRunDistance) {
+        ui.avgRunDistance.textContent = formatDistance(summary.totals.averageRunDistanceKm);
+    }
+    if (ui.avgRunDuration) {
+        ui.avgRunDuration.textContent =
+            summary.totals.averageRunDurationSec == null ? "--" : formatDuration(summary.totals.averageRunDurationSec);
+    }
+    if (ui.qualityRunRatio) {
+        ui.qualityRunRatio.textContent = formatPercentage(summary.totals.qualityRunRatio);
+    }
+    if (ui.hrDeltaTrend) {
+        ui.hrDeltaTrend.textContent = formatHrDelta(summary.totals.hrDeltaBpm);
+    }
+    if (ui.longRunShare) {
+        ui.longRunShare.textContent = formatPercentage(summary.totals.longRunSharePercent);
+    }
+}
+
+/**
+ * Format a ratio-like value as percentage text.
+ *
+ * Parameters:
+ * - value (number|null): Percentage numeric value.
+ *
+ * Returns:
+ * - string: Formatted percentage or placeholder.
+ *
+ * Raises:
+ * - No explicit throw. Invalid values return "--".
+ */
+function formatPercentage(value) {
+    if (!Number.isFinite(value)) {
+        return "--";
+    }
+
+    return `${value.toFixed(1)}%`;
+}
+
+/**
+ * Format heart-rate delta trend between recent and previous training blocks.
+ *
+ * Parameters:
+ * - value (number|null): Heart-rate delta in bpm.
+ *
+ * Returns:
+ * - string: Signed bpm trend label.
+ *
+ * Raises:
+ * - No explicit throw. Invalid values return placeholder text.
+ */
+function formatHrDelta(value) {
+    if (!Number.isFinite(value)) {
+        return "--";
+    }
+
+    if (Math.abs(value) < 0.5) {
+        return "持平";
+    }
+
+    const direction = value > 0 ? "↑" : "↓";
+    return `${direction} ${Math.abs(value).toFixed(1)} bpm`;
 }
 
 function renderPrediction(summary) {
@@ -549,14 +893,17 @@ async function enrichPerformanceInsights(enrichmentRunId) {
     }
 
     const candidateRuns = state.summary.runs
-        .filter((run) => run.distanceKm >= 5 && run.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
+        .filter((run) => run.distanceKm >= 1 && run.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
         .slice(0, 40);
 
     if (candidateRuns.length === 0) {
         return;
     }
 
-    setStatus(`已載入 ${state.summary.runs.length} 筆活動，正在分析最近 ${candidateRuns.length} 筆活動的連續 5K / 10K 區段...`, "info");
+    setStatus(
+        `已載入 ${state.summary.runs.length} 筆活動，正在分析最近 ${candidateRuns.length} 筆活動的連續 1K / 3K / 5K / 10K 區段...`,
+        "info",
+    );
 
     const batchSize = 4;
 
@@ -591,6 +938,10 @@ async function enrichPerformanceInsights(enrichmentRunId) {
 
             const segment5k = calculateBestSegmentEffort(run, splits, 5);
             const segment10k = calculateBestSegmentEffort(run, splits, 10);
+            const segment1k = calculateBestSegmentEffort(run, splits, 1);
+            const segment3k = calculateBestSegmentEffort(run, splits, 3);
+            state.summary.bests.segment1k = mergeBestEffort(state.summary.bests.segment1k, segment1k);
+            state.summary.bests.segment3k = mergeBestEffort(state.summary.bests.segment3k, segment3k);
             state.summary.bests.segment5k = mergeBestEffort(state.summary.bests.segment5k, segment5k);
             state.summary.bests.segment10k = mergeBestEffort(state.summary.bests.segment10k, segment10k);
         });
@@ -601,7 +952,7 @@ async function enrichPerformanceInsights(enrichmentRunId) {
     }
 
     if (enrichmentRunId === state.enrichmentRunId) {
-        setStatus("已完成連續 5K / 10K 區段分析，成績預測已更新。", "success");
+        setStatus("已完成連續 1K / 3K / 5K / 10K 區段分析，成績預測已更新。", "success");
     }
 }
 
@@ -614,6 +965,8 @@ function recomputePrediction(summary) {
     return buildAbilityPrediction([
         summary.bests.segment5k,
         summary.bests.segment10k,
+        summary.bests.segment3k,
+        summary.bests.fullRun3k,
         summary.bests.fullRun5k,
         summary.bests.fullRun10k,
         ...recentFullEfforts,
@@ -825,7 +1178,24 @@ async function toggleRunDetails(runId, button) {
     }
 }
 
+/**
+ * Fetch one run detail bundle, preferring IndexedDB cache before network.
+ *
+ * Parameters:
+ * - runId (number): Strava activity id.
+ *
+ * Returns:
+ * - Promise<object>: Detail bundle including detail and streams.
+ *
+ * Raises:
+ * - Error: Raised when authorization is invalid or API responses fail.
+ */
 async function fetchRunDetailBundle(runId) {
+    const cachedBundle = await loadCachedRunBundle(runId);
+    if (cachedBundle) {
+        return cachedBundle;
+    }
+
     const token = await ensureValidToken();
     if (!token) {
         throw new Error("授權已失效，請重新登入 Strava。");
@@ -850,7 +1220,9 @@ async function fetchRunDetailBundle(runId) {
     const detail = await detailResp.json();
     const streams = streamResp.ok ? await streamResp.json() : {};
 
-    return { detail, streams };
+    const bundle = { detail, streams };
+    await saveCachedRunBundle(runId, bundle);
+    return bundle;
 }
 
 function renderRunDetail(container, runId, bundle) {
@@ -1367,8 +1739,16 @@ async function generateCoachPrompt(provider) {
 }
 
 function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
+    const best1k = getDisplayBestEffort(summary, "1K");
+    const best3k = getDisplayBestEffort(summary, "3K");
     const best5k = getDisplayBestEffort(summary, "5K");
     const best10k = getDisplayBestEffort(summary, "10K");
+    const pb1k = best1k
+        ? `${formatDuration(best1k.movingTimeSec)} (${best1k.dateLabel}${best1k.splitRangeLabel ? `, ${best1k.splitRangeLabel}` : ""}, ${formatPaceFromSeconds(best1k.averagePaceSec)})`
+        : "目前沒有可用的 1K 區段";
+    const pb3k = best3k
+        ? `${formatDuration(best3k.movingTimeSec)} (${best3k.dateLabel}${best3k.splitRangeLabel ? `, ${best3k.splitRangeLabel}` : ""}, ${formatPaceFromSeconds(best3k.averagePaceSec)})`
+        : "目前沒有可用的 3K 區段";
     const pb5k = best5k
         ? `${formatDuration(best5k.movingTimeSec)} (${best5k.dateLabel}${best5k.splitRangeLabel ? `, ${best5k.splitRangeLabel}` : ""}, ${formatPaceFromSeconds(best5k.averagePaceSec)})`
         : "目前沒有可用的 5K 區段";
@@ -1386,6 +1766,8 @@ function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) {
     prompt += `- 最長距離：${formatDistance(summary.totals.longestRunKm)}\n`;
     prompt += `- 同距離配速變化：${formatDeltaPace(summary.insight.paceDeltaSec)}\n`;
     prompt += `- 訓練穩定度：${summary.totals.consistencyScore}\n`;
+    prompt += `- 最佳 1K 區段：${pb1k}\n`;
+    prompt += `- 最佳 3K 區段：${pb3k}\n`;
     prompt += `- 最佳 5K 區段：${pb5k}\n`;
     prompt += `- 最佳 10K 區段：${pb10k}\n`;
 
@@ -1459,6 +1841,30 @@ function renderEmptyDashboard() {
     ui.recentPaceNote.textContent = "最近 4 次活動";
     ui.recentHr.textContent = "--";
     ui.recentHrNote.textContent = "最近 4 次活動";
+    if (ui.acwrScore && ui.acwrNote) {
+        ui.acwrScore.textContent = "--";
+        ui.acwrNote.textContent = "7 天 / 28 天週均跑量";
+    }
+    if (ui.efficiencyScore && ui.efficiencyNote) {
+        ui.efficiencyScore.textContent = "--";
+        ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
+    }
+    if (ui.recentCadence && ui.recentCadenceNote) {
+        ui.recentCadence.textContent = "--";
+        ui.recentCadenceNote.textContent = "最近 6 次活動";
+    }
+    if (ui.elevationDensity && ui.elevationDensityNote) {
+        ui.elevationDensity.textContent = "--";
+        ui.elevationDensityNote.textContent = "最近 6 次平均每公里爬升";
+    }
+    if (ui.pb1k && ui.pb1kDate) {
+        ui.pb1k.textContent = "--";
+        ui.pb1kDate.textContent = "尚無資料";
+    }
+    if (ui.pb3k && ui.pb3kDate) {
+        ui.pb3k.textContent = "--";
+        ui.pb3kDate.textContent = "尚無資料";
+    }
     ui.pb5k.textContent = "--";
     ui.pb5kDate.textContent = "尚無資料";
     ui.pb10k.textContent = "--";
@@ -1469,6 +1875,21 @@ function renderEmptyDashboard() {
     ui.longestRun.textContent = "0.0 km";
     ui.paceDelta.textContent = "--";
     ui.consistencyScore.textContent = "--";
+    if (ui.avgRunDistance) {
+        ui.avgRunDistance.textContent = "--";
+    }
+    if (ui.avgRunDuration) {
+        ui.avgRunDuration.textContent = "--";
+    }
+    if (ui.qualityRunRatio) {
+        ui.qualityRunRatio.textContent = "--";
+    }
+    if (ui.hrDeltaTrend) {
+        ui.hrDeltaTrend.textContent = "--";
+    }
+    if (ui.longRunShare) {
+        ui.longRunShare.textContent = "--";
+    }
     ui.abilityModel.textContent = "VDOT";
     ui.abilityScore.textContent = "--";
     ui.predictionSource.textContent = "等待資料分析";
