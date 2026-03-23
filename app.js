@@ -145,137 +145,6 @@ function wireEvents() {
     ui.downloadAllMdBtn.addEventListener("click", () => downloadAllRuns("md"));
 }
 
-/**
- * Open the application IndexedDB database and ensure object stores exist.
- *
- * Parameters:
- * - None.
- *
- * Returns:
- * - Promise<IDBDatabase>: The opened database connection.
- *
- * Raises:
- * - Error: Raised when IndexedDB is unavailable or opening fails.
- */
-function openAppDatabase() {
-    return new Promise((resolve, reject) => {
-        if (!("indexedDB" in window)) {
-            reject(new Error("IndexedDB is not available in this browser."));
-            return;
-        }
-
-        const request = window.indexedDB.open(APP_DB_NAME, APP_DB_VERSION);
-        request.onupgradeneeded = () => {
-            const db = request.result;
-            if (!db.objectStoreNames.contains(APP_DB_STORES.runs)) {
-                db.createObjectStore(APP_DB_STORES.runs, { keyPath: "key" });
-            }
-            if (!db.objectStoreNames.contains(APP_DB_STORES.bundles)) {
-                db.createObjectStore(APP_DB_STORES.bundles, { keyPath: "runId" });
-            }
-        };
-
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB."));
-    });
-}
-
-/**
- * Read one record from an IndexedDB object store by key.
- *
- * Parameters:
- * - storeName (string): Object store name.
- * - key (string|number): Primary key to read.
- *
- * Returns:
- * - Promise<object|null>: The stored record or null if absent.
- *
- * Raises:
- * - Error: Raised when read transaction fails.
- */
-async function readDbRecord(storeName, key) {
-    const db = await openAppDatabase();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(storeName, "readonly");
-        const store = transaction.objectStore(storeName);
-        const request = store.get(key);
-
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error || new Error("Failed to read IndexedDB record."));
-        transaction.oncomplete = () => db.close();
-        transaction.onabort = () => db.close();
-    });
-}
-
-/**
- * Upsert one record into an IndexedDB object store.
- *
- * Parameters:
- * - storeName (string): Object store name.
- * - record (object): Record to insert or update.
- *
- * Returns:
- * - Promise<void>: Resolves when write is committed.
- *
- * Raises:
- * - Error: Raised when write transaction fails.
- */
-async function writeDbRecord(storeName, record) {
-    const db = await openAppDatabase();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(storeName, "readwrite");
-        const store = transaction.objectStore(storeName);
-        store.put(record);
-
-        transaction.oncomplete = () => {
-            db.close();
-            resolve();
-        };
-        transaction.onerror = () => {
-            db.close();
-            reject(transaction.error || new Error("Failed to write IndexedDB record."));
-        };
-        transaction.onabort = () => {
-            db.close();
-            reject(transaction.error || new Error("IndexedDB write transaction aborted."));
-        };
-    });
-}
-
-/**
- * Remove all locally cached activity and detail records from IndexedDB.
- *
- * Parameters:
- * - None.
- *
- * Returns:
- * - Promise<void>: Resolves when stores are cleared.
- *
- * Raises:
- * - Error: Raised when clear transaction fails.
- */
-async function clearCachedDatabase() {
-    const db = await openAppDatabase();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([APP_DB_STORES.runs, APP_DB_STORES.bundles], "readwrite");
-        transaction.objectStore(APP_DB_STORES.runs).clear();
-        transaction.objectStore(APP_DB_STORES.bundles).clear();
-
-        transaction.oncomplete = () => {
-            db.close();
-            resolve();
-        };
-        transaction.onerror = () => {
-            db.close();
-            reject(transaction.error || new Error("Failed to clear IndexedDB cache."));
-        };
-        transaction.onabort = () => {
-            db.close();
-            reject(transaction.error || new Error("IndexedDB clear transaction aborted."));
-        };
-    });
-}
-
 async function initApp() {
     hydrateSettingsInputs();
     setActionState(false);
@@ -516,7 +385,7 @@ async function saveCachedRuns(activities) {
  * Load a cached run detail bundle by run id.
  *
  * Parameters:
- * - runId (string|number): Strava activity id.
+ * - runId (number): Strava activity id.
  *
  * Returns:
  * - Promise<object|null>: Cached detail bundle or null.
@@ -525,12 +394,11 @@ async function saveCachedRuns(activities) {
  * - No explicit throw. Errors are swallowed and treated as cache miss.
  */
 async function loadCachedRunBundle(runId) {
-    const cacheKey = String(runId);
     try {
-        const record = await readDbRecord(APP_DB_STORES.bundles, cacheKey);
+        const record = await readDbRecord(APP_DB_STORES.bundles, runId);
         return record?.bundle || null;
     } catch (error) {
-        console.warn("Failed to read cached run bundle", cacheKey, error);
+        console.warn("Failed to read cached run bundle", runId, error);
         return null;
     }
 }
@@ -539,7 +407,7 @@ async function loadCachedRunBundle(runId) {
  * Persist one run detail bundle into IndexedDB.
  *
  * Parameters:
- * - runId (string|number): Strava activity id.
+ * - runId (number): Strava activity id.
  * - bundle (object): Detail and streams payload.
  *
  * Returns:
@@ -549,15 +417,14 @@ async function loadCachedRunBundle(runId) {
  * - No explicit throw. Errors are logged and ignored.
  */
 async function saveCachedRunBundle(runId, bundle) {
-    const cacheKey = String(runId);
     try {
         await writeDbRecord(APP_DB_STORES.bundles, {
-            runId: cacheKey,
+            runId,
             savedAt: new Date().toISOString(),
             bundle,
         });
     } catch (error) {
-        console.warn("Failed to cache run bundle", cacheKey, error);
+        console.warn("Failed to cache run bundle", runId, error);
     }
 }
 
@@ -1237,14 +1104,14 @@ function renderRuns(runs) {
 
     ui.runsList.querySelectorAll(".js-toggle-details").forEach((button) => {
         button.addEventListener("click", async () => {
-            const runId = String(button.getAttribute("data-run-id"));
+            const runId = Number(button.getAttribute("data-run-id"));
             await toggleRunDetails(runId, button);
         });
     });
 
     ui.runsList.querySelectorAll(".js-download-run").forEach((button) => {
         button.addEventListener("click", async () => {
-            const runId = String(button.getAttribute("data-run-id"));
+            const runId = Number(button.getAttribute("data-run-id"));
             await downloadRunJson(runId, button);
         });
     });
@@ -1550,7 +1417,7 @@ function renderRunChart(canvasId, streams) {
  * Download one run as a JSON file using the run date as the filename prefix.
  *
  * Parameters:
- * - runId (string|number): The Strava run identifier.
+ * - runId (number): The Strava run identifier.
  * - button (HTMLButtonElement): The action button used to trigger this export.
  *
  * Returns:
