@@ -14,6 +14,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
+    <a class="skip-link" href="#dashboard">跳到儀表板主內容</a>
     <div class="ambient ambient-a"></div>
     <div class="ambient ambient-b"></div>
     <div class="noise"></div>
@@ -31,6 +32,12 @@
                 <button id="refresh-data-btn" class="btn btn-primary" type="button">重新整理資料</button>
                 <button id="logout-btn" class="btn btn-ghost" type="button">清除授權</button>
             </div>
+            <nav class="quick-nav" aria-label="儀表板捷徑">
+                <a class="quick-link" href="#stats-section">總覽</a>
+                <a class="quick-link" href="#prediction-section">能力預測</a>
+                <a class="quick-link" href="#runs-section">近期活動</a>
+                <a class="quick-link" href="#prompt-section">AI 提示詞</a>
+            </nav>
         </header>
 
         <section id="status-banner" class="status-banner hidden" aria-live="polite"></section>
@@ -84,7 +91,7 @@
         </section>
 
         <section id="dashboard" class="dashboard hidden">
-            <section class="stats-grid">
+            <section id="stats-section" class="stats-grid">
                 <article class="stat-card">
                     <span class="stat-label">本月跑量</span>
                     <strong id="month-mileage" class="stat-value">0.0 km</strong>
@@ -104,6 +111,36 @@
                     <span class="stat-label">近期平均心率</span>
                     <strong id="recent-hr" class="stat-value">--</strong>
                     <span id="recent-hr-note" class="stat-subtext">最近 4 次活動</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">急慢比 ACWR</span>
+                    <strong id="acwr-score" class="stat-value">--</strong>
+                    <span id="acwr-note" class="stat-subtext">7 天 / 28 天週均跑量</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">效率指數</span>
+                    <strong id="efficiency-score" class="stat-value">--</strong>
+                    <span id="efficiency-note" class="stat-subtext">最近 6 次速度 / 心率</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">近期平均步頻</span>
+                    <strong id="recent-cadence" class="stat-value">--</strong>
+                    <span id="recent-cadence-note" class="stat-subtext">最近 6 次活動</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">爬升密度</span>
+                    <strong id="elevation-density" class="stat-value">--</strong>
+                    <span id="elevation-density-note" class="stat-subtext">最近 6 次平均每公里爬升</span>
+                </article>
+                <article class="stat-card accent-card">
+                    <span class="stat-label">最佳 1K 區段</span>
+                    <strong id="pb-1k" class="stat-value">--</strong>
+                    <span id="pb-1k-date" class="stat-subtext">尚無資料</span>
+                </article>
+                <article class="stat-card accent-card">
+                    <span class="stat-label">最佳 3K 區段</span>
+                    <strong id="pb-3k" class="stat-value">--</strong>
+                    <span id="pb-3k-date" class="stat-subtext">尚無資料</span>
                 </article>
                 <article class="stat-card accent-card">
                     <span class="stat-label">最佳 5K 區段</span>
@@ -145,6 +182,26 @@
                             <span>訓練穩定度</span>
                             <strong id="consistency-score">--</strong>
                         </div>
+                        <div class="insight-chip">
+                            <span>平均單次距離</span>
+                            <strong id="avg-run-distance">--</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>平均單次時間</span>
+                            <strong id="avg-run-duration">--</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>品質跑比例</span>
+                            <strong id="quality-run-ratio">--</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>心率變化</span>
+                            <strong id="hr-delta-trend">--</strong>
+                        </div>
+                        <div class="insight-chip">
+                            <span>長跑佔比</span>
+                            <strong id="long-run-share">--</strong>
+                        </div>
                     </div>
                 </article>
 
@@ -161,7 +218,7 @@
                 </article>
             </section>
 
-            <section class="panel prediction-panel">
+            <section id="prediction-section" class="panel prediction-panel">
                 <div class="section-heading compact">
                     <div>
                         <p class="section-kicker">PREDICTION</p>
@@ -204,13 +261,17 @@
                 <p id="prediction-note" class="section-description">完成資料載入後，會根據最近的最佳表現估計能力。</p>
             </section>
 
-            <section class="panel runs-panel">
+            <section id="runs-section" class="panel runs-panel">
                 <div class="section-heading compact">
                     <div>
                         <p class="section-kicker">RUNS</p>
                         <h2>近期跑步活動</h2>
                     </div>
                     <span id="runs-count" class="section-meta">0 筆</span>
+                </div>
+                <div class="inline-actions export-actions">
+                    <button id="download-all-json-btn" class="btn btn-ghost" type="button">下載全部 JSON</button>
+                    <button id="download-all-md-btn" class="btn btn-ghost" type="button">下載全部 Markdown</button>
                 </div>
                 <div id="runs-list" class="runs-list">
                     <p class="empty-state">尚未載入活動資料。</p>
@@ -222,7 +283,7 @@
                 </div>
             </section>
 
-            <section class="panel prompt-panel">
+            <section id="prompt-section" class="panel prompt-panel">
                 <div class="section-heading compact">
                     <div>
                         <p class="section-kicker">AI SUMMARY</p>

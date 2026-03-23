@@ -46,9 +46,11 @@ test("summariseActivities calculates weekly and monthly totals", () => {
     assert.equal(summary.totals.longestRunKm, 12);
 });
 
-test("summariseActivities exposes full-run 5K and 10K efforts", () => {
+test("summariseActivities exposes full-run 1K/3K/5K/10K efforts", () => {
     const now = new Date("2026-03-22T12:00:00.000Z");
     const activities = [
+        buildRun({ id: 9, date: "2026-03-22T06:30:00.000Z", distanceKm: 1.0, movingTimeSec: 225, hr: 174 }),
+        buildRun({ id: 10, date: "2026-03-21T06:30:00.000Z", distanceKm: 3.01, movingTimeSec: 780, hr: 170 }),
         buildRun({ id: 11, date: "2026-03-21T06:30:00.000Z", distanceKm: 5.02, movingTimeSec: 1380, hr: 168 }),
         buildRun({ id: 12, date: "2026-03-14T06:30:00.000Z", distanceKm: 5.05, movingTimeSec: 1405, hr: 166 }),
         buildRun({ id: 13, date: "2026-03-07T06:30:00.000Z", distanceKm: 10.01, movingTimeSec: 3080, hr: 161 }),
@@ -57,6 +59,8 @@ test("summariseActivities exposes full-run 5K and 10K efforts", () => {
 
     const summary = summariseActivities(activities, now);
 
+    assert.equal(summary.bests.fullRun1k.id, "9");
+    assert.equal(summary.bests.fullRun3k.id, "10");
     assert.equal(summary.bests.fullRun5k.id, "11");
     assert.equal(summary.bests.fullRun10k.id, "13");
     assert.equal(formatPaceFromSeconds(summary.bests.fullRun5k.averagePaceSec), "4'35/km");
@@ -79,6 +83,26 @@ test("summariseActivities uses comparable distances for pace delta", () => {
 
     assert.equal(summary.insight.paceDeltaSec, -12);
     assert.equal(formatDeltaPace(summary.insight.paceDeltaSec), "快 0:12/km");
+});
+
+test("summariseActivities exposes advanced distribution metrics", () => {
+    const now = new Date("2026-03-22T12:00:00.000Z");
+    const activities = [
+        buildRun({ id: 101, date: "2026-03-21T06:30:00.000Z", distanceKm: 14, movingTimeSec: 4500, hr: 150, cadence: 172 }),
+        buildRun({ id: 102, date: "2026-03-20T06:30:00.000Z", distanceKm: 8, movingTimeSec: 2580, hr: 154, cadence: 176 }),
+        buildRun({ id: 103, date: "2026-03-18T06:30:00.000Z", distanceKm: 10, movingTimeSec: 3300, hr: 152, cadence: 174 }),
+        buildRun({ id: 104, date: "2026-03-16T06:30:00.000Z", distanceKm: 6, movingTimeSec: 1980, hr: 156, cadence: 178 }),
+        buildRun({ id: 105, date: "2026-03-13T06:30:00.000Z", distanceKm: 12, movingTimeSec: 3960, hr: 148, cadence: 170 }),
+        buildRun({ id: 106, date: "2026-03-10T06:30:00.000Z", distanceKm: 7, movingTimeSec: 2310, hr: 151, cadence: 175 }),
+    ];
+
+    const summary = summariseActivities(activities, now);
+
+    assert.ok(summary.totals.averageRunDistanceKm > 9);
+    assert.ok(summary.totals.averageRunDurationSec > 2500);
+    assert.ok(summary.totals.qualityRunRatio >= 0);
+    assert.ok(summary.totals.longRunSharePercent > 20);
+    assert.ok(summary.totals.recentCadence > 170);
 });
 
 test("calculateBestSegmentEffort finds the fastest rolling 5K from splits", () => {
@@ -126,7 +150,7 @@ test("buildAbilityPrediction returns VDOT-based equivalent performances", () => 
     assert.ok(profile.predictions["10K"].vdotTimeSec < 3200);
 });
 
-function buildRun({ id, date, distanceKm, movingTimeSec, hr }) {
+function buildRun({ id, date, distanceKm, movingTimeSec, hr, cadence = 174 }) {
     return {
         id,
         type: "Run",
@@ -137,6 +161,7 @@ function buildRun({ id, date, distanceKm, movingTimeSec, hr }) {
         average_heartrate: hr,
         average_speed: (distanceKm * 1000) / movingTimeSec,
         total_elevation_gain: 100,
+        average_cadence: cadence,
     };
 }
 

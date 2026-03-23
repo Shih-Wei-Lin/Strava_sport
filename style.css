@@ -30,6 +30,7 @@
 
 html {
     scroll-behavior: smooth;
+    scroll-padding-top: 1rem;
 }
 
 body {
@@ -55,6 +56,23 @@ button {
     background: none;
     color: inherit;
     cursor: pointer;
+}
+
+.skip-link {
+    position: absolute;
+    top: -200px;
+    left: 0.75rem;
+    z-index: 20;
+    padding: 0.65rem 0.95rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--teal), var(--teal-deep));
+    color: #03211f;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.skip-link:focus-visible {
+    top: calc(0.5rem + var(--safe-top));
 }
 
 input,
@@ -186,6 +204,28 @@ textarea {
     gap: 0.75rem;
 }
 
+.quick-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.quick-link {
+    padding: 0.45rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(153, 174, 190, 0.22);
+    text-decoration: none;
+    color: var(--text-soft);
+    font-size: 0.88rem;
+    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.quick-link:hover {
+    color: var(--text);
+    border-color: rgba(94, 234, 212, 0.4);
+    background: rgba(255, 255, 255, 0.04);
+}
+
 .btn {
     min-height: 2.9rem;
     padding: 0.8rem 1.15rem;
@@ -202,6 +242,14 @@ textarea {
     opacity: 0.45;
     cursor: not-allowed;
     transform: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+    outline: 2px solid rgba(94, 234, 212, 0.88);
+    outline-offset: 2px;
 }
 
 .btn-primary {
@@ -351,6 +399,10 @@ textarea {
 .runs-list {
     display: grid;
     gap: 0.9rem;
+}
+
+.export-actions {
+    margin-bottom: 0.9rem;
 }
 
 .pagination {
@@ -567,5 +619,28 @@ textarea {
 
     .run-header {
         flex-direction: column;
+    }
+
+    .quick-nav {
+        gap: 0.45rem;
+    }
+
+    .quick-link {
+        font-size: 0.82rem;
+        padding: 0.42rem 0.7rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
     }
 }
