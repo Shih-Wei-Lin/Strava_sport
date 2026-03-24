@@ -1,0 +1,19 @@
+{
+  "name": "Stride Scope",
+  "short_name": "Stride",
+  "description": "Strava Running Performance & Load Analytics",
+  "start_url": "./",
+  "display": "standalone",
+  "scope": "./",
+  "background_color": "#07131f",
+  "theme_color": "#5eead4",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ const FIVE_K_MIN = 4.8;
 const FIVE_K_MAX = 5.3;
 const TEN_K_MIN = 9.5;
 const TEN_K_MAX = 10.5;
+const DEFAULT_FIXED_MAX_HEARTRATE = 190;
 
 const PREDICTION_DISTANCES = {
     "5K": 5000,
@@ -71,6 +72,23 @@ export function formatPaceFromSpeed(speedMetersPerSecond) {
     }
 
     return formatPaceFromSeconds(1000 / speed);
+}
+
+export function formatCompactDuration(seconds) {
+    const totalSeconds = Math.max(0, Math.round(toNumber(seconds)));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
+    }
+
+    if (minutes > 0) {
+        return `${minutes}m ${secs.toString().padStart(2, "0")}s`;
+    }
+
+    return `${secs}s`;
 }
 
 export function formatShortDate(dateInput) {
@@ -202,7 +220,7 @@ function sumDistance(runs) {
     return runs.reduce((total, run) => total + run.distanceKm, 0);
 }
 
-function buildWeeklyTrend(runs, now, weeks = 6) {
+function buildWeeklyTrend(runs, now, weeks = 12) {
     const currentWeek = startOfWeek(now);
     const buckets = [];
 
@@ -553,6 +571,104 @@ export function mergeBestEffort(currentBest, candidate) {
     }
 
     return currentBest;
+}
+
+export function buildHeartRateZoneSummary(streams, detail = null, options = {}) {
+    const heartrateSamples = Array.isArray(streams?.heartrate?.data) ? streams.heartrate.data : [];
+    if (heartrateSamples.length === 0) {
+        return null;
+    }
+
+    const validHrSamples = heartrateSamples
+        .map((value) => toNumber(value, NaN))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    if (validHrSamples.length === 0) {
+        return null;
+    }
+
+    const timeSamples = Array.isArray(streams?.time?.data) ? streams.time.data : [];
+    const zoneRanges = Array.isArray(options.zoneRanges) ? options.zoneRanges : null;
+    const referenceMaxHr = toNumber(options.referenceMaxHr, DEFAULT_FIXED_MAX_HEARTRATE);
+    if (!zoneRanges && (!Number.isFinite(referenceMaxHr) || referenceMaxHr <= 0)) {
+        return null;
+    }
+
+    const totalMovingTimeSec = toNumber(detail?.moving_time, 0);
+    const sampleFallbackSeconds =
+        heartrateSamples.length > 1 ? totalMovingTimeSec / heartrateSamples.length : totalMovingTimeSec;
+
+    const zoneDefs = zoneRanges?.length
+        ? zoneRanges.map((zone, index) => ({
+              key: `z${index + 1}`,
+              label: `Z${index + 1}`,
+              min: toNumber(zone.min, 0),
+              max: Number.isFinite(toNumber(zone.max, NaN)) ? toNumber(zone.max, NaN) : Infinity,
+          }))
+        : [
+              { key: "z1", label: "Z1", minRatio: 0, maxRatio: 0.6 },
+              { key: "z2", label: "Z2", minRatio: 0.6, maxRatio: 0.7 },
+              { key: "z3", label: "Z3", minRatio: 0.7, maxRatio: 0.8 },
+              { key: "z4", label: "Z4", minRatio: 0.8, maxRatio: 0.9 },
+              { key: "z5", label: "Z5", minRatio: 0.9, maxRatio: Infinity },
+          ];
+    const zoneTotals = new Map(zoneDefs.map((zone) => [zone.key, 0]));
+
+    heartrateSamples.forEach((sample, index) => {
+        const hr = toNumber(sample, NaN);
+        if (!Number.isFinite(hr) || hr <= 0) {
+            return;
+        }
+
+        let durationSec = sampleFallbackSeconds;
+        if (timeSamples.length === heartrateSamples.length) {
+            if (index < timeSamples.length - 1) {
+                durationSec = Math.max(0, toNumber(timeSamples[index + 1], 0) - toNumber(timeSamples[index], 0));
+            } else {
+                durationSec = 0;
+            }
+        }
+
+        const zone = zoneRanges?.length
+            ? zoneDefs.find((entry, index) => {
+                  if (index === zoneDefs.length - 1) {
+                      return hr >= entry.min;
+                  }
+
+                  return hr >= entry.min && hr < entry.max;
+              }) || zoneDefs[0]
+            : zoneDefs.find((entry) => {
+                  const ratio = hr / referenceMaxHr;
+                  return ratio >= entry.minRatio && ratio < entry.maxRatio;
+              }) || zoneDefs[zoneDefs.length - 1];
+        zoneTotals.set(zone.key, zoneTotals.get(zone.key) + durationSec);
+    });
+
+    const totalTimeSec = [...zoneTotals.values()].reduce((sum, value) => sum + value, 0);
+    if (!Number.isFinite(totalTimeSec) || totalTimeSec <= 0) {
+        return null;
+    }
+
+        return {
+        referenceMaxHr: zoneRanges?.length ? null : Math.round(referenceMaxHr),
+        totalTimeSec,
+        method: zoneRanges?.length ? "strava-zones" : "fixed-max",
+        zones: zoneDefs.map((zone) => {
+            const seconds = zoneTotals.get(zone.key);
+            return {
+                key: zone.key,
+                label: zone.label,
+                seconds,
+                share: seconds / totalTimeSec,
+                rangeLabel: zoneRanges?.length
+                    ? zone.max === Infinity
+                        ? `>= ${Math.round(zone.min)} bpm`
+                        : `${Math.round(zone.min)}-${Math.round(zone.max)} bpm`
+                    : zone.maxRatio === Infinity
+                      ? `>= ${Math.round(zone.minRatio * referenceMaxHr)} bpm`
+                      : `${Math.round(zone.minRatio * referenceMaxHr)}-${Math.round(zone.maxRatio * referenceMaxHr) - 1} bpm`,
+            };
+        }),
+    };
 }
 
 export function calculateVdot(distanceMeters, timeSeconds) {

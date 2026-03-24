@@ -2,9 +2,11 @@
 import assert from "node:assert/strict";
 
 import {
+    buildHeartRateZoneSummary,
     buildAbilityPrediction,
     calculateBestSegmentEffort,
     formatDeltaPace,
+    formatCompactDuration,
     formatPaceFromSeconds,
     parseStravaLocalDate,
     startOfWeek,
@@ -44,6 +46,8 @@ test("summariseActivities calculates weekly and monthly totals", () => {
     assert.equal(summary.totals.monthDistanceKm, 25);
     assert.equal(summary.totals.monthCount, 3);
     assert.equal(summary.totals.longestRunKm, 12);
+    assert.equal(summary.weeklyTrend.length, 12);
+    assert.equal(summary.weeklyTrend.at(-1).distanceKm, 20);
 });
 
 test("summariseActivities exposes full-run 1K/3K/5K/10K efforts", () => {
@@ -148,6 +152,59 @@ test("buildAbilityPrediction returns VDOT-based equivalent performances", () => 
     assert.ok(profile.vdot > 38 && profile.vdot < 39);
     assert.ok(profile.predictions["10K"].vdotTimeSec > 3000);
     assert.ok(profile.predictions["10K"].vdotTimeSec < 3200);
+});
+
+test("buildHeartRateZoneSummary groups stream time into five relative zones", () => {
+    const summary = buildHeartRateZoneSummary(
+        {
+            heartrate: { data: [110, 125, 145, 165, 178] },
+            time: { data: [0, 300, 600, 900, 1200] },
+        },
+        { moving_time: 1200, max_heartrate: 180 },
+        { referenceMaxHr: 190 },
+    );
+
+    assert.equal(summary.method, "fixed-max");
+    assert.equal(summary.referenceMaxHr, 190);
+    assert.equal(Math.round(summary.totalTimeSec), 1200);
+    assert.deepEqual(
+        summary.zones.map((zone) => Math.round(zone.seconds)),
+        [300, 300, 300, 300, 0],
+    );
+    assert.equal(summary.zones[4].rangeLabel, ">= 171 bpm");
+});
+
+test("buildHeartRateZoneSummary prefers Strava zone ranges when provided", () => {
+    const summary = buildHeartRateZoneSummary(
+        {
+            heartrate: { data: [118, 132, 146, 162, 176] },
+            time: { data: [0, 240, 480, 720, 960] },
+        },
+        { moving_time: 960 },
+        {
+            zoneRanges: [
+                { min: 100, max: 129 },
+                { min: 130, max: 144 },
+                { min: 145, max: 159 },
+                { min: 160, max: 174 },
+                { min: 175, max: 220 },
+            ],
+        },
+    );
+
+    assert.equal(summary.method, "strava-zones");
+    assert.equal(summary.referenceMaxHr, null);
+    assert.deepEqual(
+        summary.zones.map((zone) => Math.round(zone.seconds)),
+        [240, 240, 240, 240, 0],
+    );
+    assert.equal(summary.zones[0].rangeLabel, "100-129 bpm");
+    assert.equal(summary.zones[4].rangeLabel, "175-220 bpm");
+});
+
+test("formatCompactDuration renders dense time labels for zone summaries", () => {
+    assert.equal(formatCompactDuration(95), "1m 35s");
+    assert.equal(formatCompactDuration(3720), "1h 02m");
 });
 
 function buildRun({ id, date, distanceKm, movingTimeSec, hr, cadence = 174 }) {

@@ -6,10 +6,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Stride Scope">
+    <meta name="theme-color" content="#5eead4">
     <title>Stride Scope | Strava 跑步分析儀表板</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.svg">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
 </head>
@@ -30,8 +33,10 @@
             </div>
             <div class="hero-actions">
                 <button id="refresh-data-btn" class="btn btn-primary" type="button">重新整理資料</button>
+                <button id="install-app-btn" class="btn btn-ghost hidden" type="button">安裝 App</button>
                 <button id="logout-btn" class="btn btn-ghost" type="button">清除授權</button>
             </div>
+            <p id="install-hint" class="install-hint hidden"></p>
             <nav class="quick-nav" aria-label="儀表板捷徑">
                 <a class="quick-link" href="#stats-section">總覽</a>
                 <a class="quick-link" href="#prediction-section">能力預測</a>
@@ -165,7 +170,7 @@
                     <p id="training-summary" class="analysis-copy">
                         成功連接 Strava 後，這裡會整理你的近期負荷、同距離配速變化與能力預測。
                     </p>
-                    <div class="chip-grid">
+                    <div class="chip-grid compact-chip-grid">
                         <div class="insight-chip">
                             <span>最近 7 天</span>
                             <strong id="recent-load">0.0 km</strong>
@@ -209,11 +214,11 @@
                     <div class="section-heading compact">
                         <div>
                             <p class="section-kicker">TREND</p>
-                            <h2>六週跑量趨勢</h2>
+                            <h2>近三個月跑量趨勢</h2>
                         </div>
                     </div>
                     <div class="chart-wrapper">
-                        <canvas id="weekly-chart" aria-label="六週跑量圖表"></canvas>
+                        <canvas id="weekly-chart" aria-label="近三個月跑量圖表"></canvas>
                     </div>
                 </article>
             </section>
@@ -273,12 +278,18 @@
                         <button id="cal-next-btn" class="btn btn-ghost btn-sm" type="button">下個月</button>
                     </div>
                 </div>
+                <div class="heatmap-toggle" aria-label="熱力圖切換">
+                    <button class="heatmap-pill is-active" type="button" data-heatmap-mode="distance" aria-pressed="true">距離</button>
+                    <button class="heatmap-pill" type="button" data-heatmap-mode="duration" aria-pressed="false">時間</button>
+                    <button class="heatmap-pill" type="button" data-heatmap-mode="pace" aria-pressed="false">配速</button>
+                </div>
                 <div class="calendar-wrapper">
                     <div class="calendar-grid-header">
                         <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
                     </div>
                     <div id="calendar-grid" class="calendar-grid"></div>
                 </div>
+                <p id="heatmap-legend" class="section-description">熱力圖: 距離</p>
             </section>
 
             <section id="runs-section" class="panel runs-panel">

@@ -1,7 +1,9 @@
 import {
+    buildHeartRateZoneSummary,
     buildAbilityPrediction,
     calculateBestSegmentEffort,
     formatDeltaPace,
+    formatCompactDuration,
     formatDistance,
     formatDuration,
     formatPaceFromSeconds,
@@ -19,10 +21,13 @@ const STORAGE_KEYS = {
     expiresAt: "strava_expires_at",
     athleteName: "strava_athlete_name",
     authState: "strava_oauth_state",
+    calendarHeatmapMode: "calendar_heatmap_mode",
 };
+const FIXED_MAX_HEARTRATE = 190;
 
 const state = {
     summary: null,
+    athleteZones: null,
     detailCache: new Map(),
     runCharts: new Map(),
     weeklyChart: null,
@@ -30,6 +35,8 @@ const state = {
     runsPage: 1,
     calMonth: new Date().getMonth(),
     calYear: new Date().getFullYear(),
+    calendarHeatmapMode: localStorage.getItem(STORAGE_KEYS.calendarHeatmapMode) || "distance",
+    installPromptEvent: null,
 };
 
 const RUNS_PER_PAGE = 10;
@@ -114,6 +121,10 @@ function bindUi() {
     ui.calNextBtn = document.getElementById("cal-next-btn");
     ui.calMonthLabel = document.getElementById("cal-month-label");
     ui.calendarGrid = document.getElementById("calendar-grid");
+    ui.heatmapModePills = Array.from(document.querySelectorAll("[data-heatmap-mode]"));
+    ui.heatmapLegend = document.getElementById("heatmap-legend");
+    ui.installAppBtn = document.getElementById("install-app-btn");
+    ui.installHint = document.getElementById("install-hint");
 
     ui.runsCount = document.getElementById("runs-count");
     ui.runsList = document.getElementById("runs-list");
@@ -148,6 +159,10 @@ function wireEvents() {
     ui.copyBtn.addEventListener("click", handleCopyPrompt);
     ui.calPrevBtn.addEventListener("click", () => changeCalendarMonth(-1));
     ui.calNextBtn.addEventListener("click", () => changeCalendarMonth(1));
+    ui.installAppBtn?.addEventListener("click", handleInstallApp);
+    ui.heatmapModePills.forEach((button) => {
+        button.addEventListener("click", () => setCalendarHeatmapMode(button.dataset.heatmapMode));
+    });
     ui.runsPrevBtn.addEventListener("click", () => changeRunsPage(-1));
     ui.runsNextBtn.addEventListener("click", () => changeRunsPage(1));
     ui.downloadAllJsonBtn.addEventListener("click", () => downloadAllRuns("json"));
@@ -155,6 +170,10 @@ function wireEvents() {
 }
 
 async function initApp() {
+    registerServiceWorker();
+    bindInstallPrompt();
+    refreshInstallUi();
+    syncHeatmapModeUi();
     hydrateSettingsInputs();
     setActionState(false);
 
@@ -193,6 +212,80 @@ async function initApp() {
     }
 
     await loadDashboard();
+}
+
+function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) {
+        return;
+    }
+
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch((error) => {
+            console.warn("Service worker registration failed", error);
+        });
+    });
+}
+
+function bindInstallPrompt() {
+    window.addEventListener("beforeinstallprompt", (event) => {
+        event.preventDefault();
+        state.installPromptEvent = event;
+        refreshInstallUi();
+    });
+
+    window.addEventListener("appinstalled", () => {
+        state.installPromptEvent = null;
+        refreshInstallUi(true);
+    });
+}
+
+async function handleInstallApp() {
+    if (state.installPromptEvent) {
+        state.installPromptEvent.prompt();
+        await state.installPromptEvent.userChoice.catch(() => null);
+        return;
+    }
+
+    if (ui.installHint && isIosLike()) {
+        ui.installHint.classList.remove("hidden");
+    }
+}
+
+function refreshInstallUi(installed = false) {
+    if (!ui.installAppBtn || !ui.installHint) {
+        return;
+    }
+
+    const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+    if (standalone || installed) {
+        ui.installAppBtn.classList.add("hidden");
+        ui.installHint.classList.add("hidden");
+        return;
+    }
+
+    ui.installAppBtn.classList.remove("hidden");
+    ui.installAppBtn.disabled = false;
+
+    if (state.installPromptEvent) {
+        ui.installAppBtn.textContent = "安裝到主畫面";
+        ui.installHint.classList.add("hidden");
+        return;
+    }
+
+    if (isIosLike()) {
+        ui.installAppBtn.textContent = "加入主畫面說明";
+        ui.installHint.textContent = "iPhone: 用 Safari 開啟後按分享，再選「加入主畫面」。";
+        ui.installHint.classList.remove("hidden");
+        return;
+    }
+
+    ui.installAppBtn.textContent = "安裝到主畫面";
+    ui.installHint.textContent = "若瀏覽器支援安裝，這個按鈕會跳出加入主畫面的提示。";
+    ui.installHint.classList.remove("hidden");
+}
+
+function isIosLike() {
+    return /iPhone|iPad|iPod/i.test(window.navigator.userAgent || "");
 }
 
 function hydrateSettingsInputs() {
@@ -603,7 +696,7 @@ function startStravaLogin() {
     loginUrl.searchParams.set("redirect_uri", buildRedirectUri());
     loginUrl.searchParams.set("response_type", "code");
     loginUrl.searchParams.set("approval_prompt", "auto");
-    loginUrl.searchParams.set("scope", "read,activity:read_all");
+    loginUrl.searchParams.set("scope", "read,activity:read_all,profile:read_all");
     loginUrl.searchParams.set("state", stateValue);
 
     window.location.href = loginUrl.toString();
@@ -697,7 +790,11 @@ async function loadDashboard() {
     ui.runsCount.textContent = "載入中";
 
     try {
-        const activities = await fetchRunActivities(token);
+        const [activities, athleteZones] = await Promise.all([
+            fetchRunActivities(token),
+            fetchAthleteZones(token),
+        ]);
+        state.athleteZones = athleteZones;
         state.summary = summariseActivities(activities, new Date());
         renderDashboard(state.summary);
 
@@ -820,6 +917,17 @@ function renderCalendar(runs) {
     const today = new Date();
     const todayStr = toLocalDateKey(today);
     const activitiesByDate = groupActivitiesByDate(runs);
+    const monthSummaries = [...activitiesByDate.entries()]
+        .filter(([dateKey]) => {
+            const date = new Date(`${dateKey}T00:00:00`);
+            return date.getFullYear() === state.calYear && date.getMonth() === state.calMonth;
+        })
+        .map(([, activity]) => activity);
+    const intensityMax = getCalendarMetricMax(monthSummaries, state.calendarHeatmapMode);
+
+    if (ui.heatmapLegend) {
+        ui.heatmapLegend.textContent = buildHeatmapLegendText(state.calendarHeatmapMode, intensityMax);
+    }
 
     for (let i = 1; i <= totalDays; i++) {
         const date = new Date(state.calYear, state.calMonth, i);
@@ -827,7 +935,7 @@ function renderCalendar(runs) {
         const activity = activitiesByDate.get(dateStr);
         const isToday = dateStr === todayStr;
 
-        fragment.appendChild(createCalendarDay(i, false, isToday, activity));
+        fragment.appendChild(createCalendarDay(i, false, isToday, activity, intensityMax));
     }
 
     // Next month days
@@ -852,7 +960,7 @@ function renderCalendar(runs) {
  * Returns:
  * - HTMLDivElement: The constructed calendar day element.
  */
-function createCalendarDay(day, isOtherMonth, isToday = false, activity = null) {
+function createCalendarDay(day, isOtherMonth, isToday = false, activity = null, intensityMax = 0) {
     const el = document.createElement("div");
     el.className = "calendar-day";
     if (isOtherMonth) el.classList.add("other-month");
@@ -864,18 +972,19 @@ function createCalendarDay(day, isOtherMonth, isToday = false, activity = null) 
 
     if (activity) {
         el.classList.add("has-activity");
+        el.style.setProperty("--heat-alpha", getCalendarMetricIntensity(activity, state.calendarHeatmapMode, intensityMax).toFixed(2));
         const dot = document.createElement("div");
         dot.className = "activity-dot";
         el.appendChild(dot);
 
         const dist = document.createElement("span");
         dist.className = "distance-label";
-        dist.textContent = `${activity.distanceKm.toFixed(1)}k`;
+        dist.textContent = formatCalendarMetric(activity, state.calendarHeatmapMode);
         el.appendChild(dist);
 
-        el.title = `${activity.name} (${activity.averagePaceLabel})`;
+        el.title = buildCalendarDayTitle(activity);
         el.addEventListener("click", () => {
-            focusRunFromCalendar(activity.id);
+            focusRunFromCalendar(activity.primaryRunId);
         });
     }
 
@@ -895,12 +1004,176 @@ function groupActivitiesByDate(runs) {
     const map = new Map();
     runs.forEach((run) => {
         const dateStr = toLocalDateKey(run.startedAt);
-        // If multiple runs on same day, take the longest one for display
-        if (!map.has(dateStr) || run.distanceKm > map.get(dateStr).distanceKm) {
-            map.set(dateStr, run);
+        const existing = map.get(dateStr);
+        if (!existing) {
+            map.set(dateStr, {
+                dateStr,
+                name: run.name,
+                primaryRunId: run.id,
+                runCount: 1,
+                longestRunKm: run.distanceKm,
+                distanceKm: run.distanceKm,
+                movingTimeSec: run.movingTimeSec,
+                averagePaceSec: run.averagePaceSec,
+                averagePaceLabel: run.averagePaceLabel,
+                averageHeartrateSum: run.averageHeartrate ?? 0,
+                averageHeartrateCount: run.averageHeartrate == null ? 0 : 1,
+            });
+            return;
         }
+
+        existing.runCount += 1;
+        existing.distanceKm += run.distanceKm;
+        existing.movingTimeSec += run.movingTimeSec;
+        if (run.averageHeartrate != null) {
+            existing.averageHeartrateSum += run.averageHeartrate;
+            existing.averageHeartrateCount += 1;
+        }
+        if (run.distanceKm > existing.longestRunKm) {
+            existing.primaryRunId = run.id;
+            existing.name = run.name;
+            existing.longestRunKm = run.distanceKm;
+        }
+        existing.averagePaceSec = existing.distanceKm > 0 ? existing.movingTimeSec / existing.distanceKm : null;
+        existing.averagePaceLabel = formatPaceFromSeconds(existing.averagePaceSec);
     });
     return map;
+}
+
+async function fetchAthleteZones(token) {
+    try {
+        const response = await fetch("https://www.strava.com/api/v3/athlete/zones", {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.status === 401 || response.status === 403) {
+            return null;
+        }
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const zones = await response.json();
+        return zones?.heart_rate?.zones ? zones : null;
+    } catch (error) {
+        console.warn("Failed to fetch athlete zones", error);
+        return null;
+    }
+}
+
+function setCalendarHeatmapMode(mode) {
+    if (!["distance", "duration", "pace"].includes(mode) || state.calendarHeatmapMode === mode) {
+        return;
+    }
+
+    state.calendarHeatmapMode = mode;
+    localStorage.setItem(STORAGE_KEYS.calendarHeatmapMode, mode);
+    syncHeatmapModeUi();
+
+    if (state.summary) {
+        renderCalendar(state.summary.runs);
+    }
+}
+
+function syncHeatmapModeUi() {
+    ui.heatmapModePills?.forEach((button) => {
+        const active = button.dataset.heatmapMode === state.calendarHeatmapMode;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+    });
+}
+
+function getCalendarMetricValue(activity, mode) {
+    if (!activity) {
+        return 0;
+    }
+
+    if (mode === "duration") {
+        return activity.movingTimeSec / 60;
+    }
+
+    if (mode === "pace") {
+        return activity.averagePaceSec || 0;
+    }
+
+    return activity.distanceKm;
+}
+
+function getCalendarMetricMax(activities, mode) {
+    const values = activities
+        .map((activity) => getCalendarMetricValue(activity, mode))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    if (values.length === 0) {
+        return 0;
+    }
+
+    return Math.max(...values);
+}
+
+function getCalendarMetricMin(activities, mode) {
+    const values = activities
+        .map((activity) => getCalendarMetricValue(activity, mode))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    if (values.length === 0) {
+        return 0;
+    }
+
+    return Math.min(...values);
+}
+
+function getCalendarMetricIntensity(activity, mode, maxValue) {
+    const value = getCalendarMetricValue(activity, mode);
+    if (!Number.isFinite(value) || value <= 0 || maxValue <= 0) {
+        return 0.16;
+    }
+
+    if (mode === "pace") {
+        const monthActivities = state.summary
+            ? [...groupActivitiesByDate(state.summary.runs).values()].filter((entry) => {
+                  const date = new Date(`${entry.dateStr}T00:00:00`);
+                  return date.getFullYear() === state.calYear && date.getMonth() === state.calMonth;
+              })
+            : [];
+        const minValue = getCalendarMetricMin(monthActivities, mode);
+        const range = Math.max(1, maxValue - minValue);
+        const normalized = 1 - Math.min(1, Math.max(0, (value - minValue) / range));
+        return 0.2 + normalized * 0.65;
+    }
+
+    return 0.2 + Math.min(1, value / maxValue) * 0.65;
+}
+
+function formatCalendarMetric(activity, mode) {
+    if (mode === "duration") {
+        return `${Math.round(activity.movingTimeSec / 60)}m`;
+    }
+
+    if (mode === "pace") {
+        return formatPaceFromSeconds(activity.averagePaceSec);
+    }
+
+    return `${activity.distanceKm.toFixed(1)}k`;
+}
+
+function buildCalendarDayTitle(activity) {
+    const averageHr =
+        activity.averageHeartrateCount > 0
+            ? Math.round(activity.averageHeartrateSum / activity.averageHeartrateCount)
+            : null;
+    return `${activity.runCount} 次跑步 · ${activity.distanceKm.toFixed(1)} km · ${formatDuration(activity.movingTimeSec)} · ${activity.averagePaceLabel} · HR ${averageHr ?? "--"}`;
+}
+
+function buildHeatmapLegendText(mode, maxValue) {
+    if (mode === "duration") {
+        return `熱力圖: 時間，最深約 ${Math.round(maxValue)} 分鐘`;
+    }
+
+    if (mode === "pace") {
+        return "熱力圖: 配速，顏色越亮代表越快";
+    }
+
+    return `熱力圖: 距離，最深約 ${maxValue.toFixed(1)} km`;
 }
 
 /**
@@ -1308,28 +1581,34 @@ function renderWeeklyChart(weeklyTrend) {
     }
 
     state.weeklyChart = new window.Chart(ui.weeklyChartCanvas, {
-        type: "bar",
+        type: "line",
         data: {
             labels: weeklyTrend.map((entry) => entry.label),
             datasets: [
                 {
                     label: "跑量 (km)",
                     data: weeklyTrend.map((entry) => entry.distanceKm),
-                    borderRadius: 14,
-                    backgroundColor: [
-                        "rgba(94, 234, 212, 0.28)",
-                        "rgba(94, 234, 212, 0.32)",
-                        "rgba(94, 234, 212, 0.38)",
-                        "rgba(94, 234, 212, 0.45)",
-                        "rgba(249, 115, 22, 0.42)",
-                        "rgba(249, 115, 22, 0.55)",
-                    ],
+                    borderColor: "rgba(94, 234, 212, 0.95)",
+                    backgroundColor: "rgba(94, 234, 212, 0.14)",
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.28,
+                    cubicInterpolationMode: "monotone",
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    pointBackgroundColor: "rgba(249, 115, 22, 0.92)",
+                    pointBorderColor: "rgba(4, 11, 18, 0.95)",
+                    pointBorderWidth: 1.5,
                 },
             ],
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: "index",
+                intersect: false,
+            },
             plugins: {
                 legend: {
                     labels: { color: "#edf6f3" },
@@ -1345,7 +1624,12 @@ function renderWeeklyChart(weeklyTrend) {
             },
             scales: {
                 x: {
-                    ticks: { color: "#99aebe" },
+                    ticks: {
+                        color: "#99aebe",
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 6,
+                    },
                     grid: { display: false },
                 },
                 y: {
@@ -1532,7 +1816,7 @@ async function fetchRunDetailBundle(runId) {
             headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(
-            `https://www.strava.com/api/v3/activities/${runId}/streams/distance,heartrate,velocity_smooth,altitude?key_by_type=true`,
+            `https://www.strava.com/api/v3/activities/${runId}/streams/time,distance,heartrate,velocity_smooth,altitude?key_by_type=true`,
             {
                 headers: { Authorization: `Bearer ${token}` },
             },
@@ -1559,12 +1843,16 @@ function renderRunDetail(container, runId, bundle) {
     const calories = detail.calories == null ? "--" : `${Math.round(detail.calories)} kcal`;
     const sufferScore = detail.suffer_score == null ? "--" : String(detail.suffer_score);
     const chartId = `run-chart-${runId}`;
+    const hrZoneSummary = buildHeartRateZoneSummary(bundle.streams, detail, {
+        zoneRanges: state.athleteZones?.heart_rate?.zones || null,
+        referenceMaxHr: FIXED_MAX_HEARTRATE,
+    });
 
     const best5k = calculateBestSegmentEffort(
         {
             id: runId,
-            name: detail.name || "未命名跑步",
-            dateLabel: detail.start_date_local ? formatTaiwanDate(detail.start_date_local) : "未知日期",
+            name: detail.name || "Run",
+            dateLabel: detail.start_date_local ? formatTaiwanDate(detail.start_date_local) : "--",
             startedAt: parseStravaLocalDate(detail.start_date_local) || new Date(Date.now()),
         },
         splits,
@@ -1627,12 +1915,16 @@ function renderRunDetail(container, runId, bundle) {
             <div class="detail-title">活動內最佳 5K 區段</div>
             <p class="detail-copy">${best5k ? `${best5k.movingTimeLabel} · ${best5k.splitRangeLabel} · ${best5k.averagePaceLabel}` : "這筆活動無法估算完整 5K 區段"}</p>
         </div>
+        <div class="detail-card">
+            <div class="detail-title">心率區間分析</div>
+            ${renderHeartRateZones(hrZoneSummary)}
+        </div>
         <div>
-            <div class="detail-title">分段分析</div>
+            <div class="detail-title">每公里分析</div>
             ${splitsHtml}
         </div>
         <div>
-            <div class="detail-title">心率 / 配速曲線</div>
+            <div class="detail-title">心率 / 配速趨勢</div>
             <div class="chart-wrapper">
                 <canvas id="${chartId}"></canvas>
             </div>
@@ -1640,6 +1932,39 @@ function renderRunDetail(container, runId, bundle) {
     `;
 
     renderRunChart(chartId, bundle.streams);
+}
+
+function renderHeartRateZones(summary) {
+    if (!summary) {
+        return '<p class="detail-copy">這筆活動沒有足夠的心率 stream，無法估算區間分布。</p>';
+    }
+
+    const rows = summary.zones
+        .map((zone) => {
+            return `
+                <div class="zone-row">
+                    <div class="zone-meta">
+                        <strong>${zone.label}</strong>
+                        <span>${zone.rangeLabel}</span>
+                    </div>
+                    <div class="zone-bar-track">
+                        <div class="zone-bar-fill" style="width: ${(zone.share * 100).toFixed(1)}%"></div>
+                    </div>
+                    <div class="zone-values">
+                        <strong>${Math.round(zone.share * 100)}%</strong>
+                        <span>${formatCompactDuration(zone.seconds)}</span>
+                    </div>
+                </div>
+            `;
+        })
+        .join("");
+
+    return `
+        <div class="zone-stack">
+            <p class="detail-copy">${summary.method === "strava-zones" ? "依 Strava 心率區間設定判別這次活動的心率分布。" : `Strava 未提供心率區間設定，改用 ${summary.referenceMaxHr} bpm 作為備援基準。`}</p>
+            ${rows}
+        </div>
+    `;
 }
 
 function renderRunChart(canvasId, streams) {
