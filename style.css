@@ -197,6 +197,21 @@ textarea {
     font-size: 1rem;
 }
 
+.build-meta {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin: 0 0 0.9rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(94, 234, 212, 0.2);
+    background: rgba(94, 234, 212, 0.08);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
 .hero-actions,
 .inline-actions {
     display: flex;
