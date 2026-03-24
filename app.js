@@ -28,6 +28,8 @@ const state = {
     weeklyChart: null,
     enrichmentRunId: 0,
     runsPage: 1,
+    calMonth: new Date().getMonth(),
+    calYear: new Date().getFullYear(),
 };
 
 const RUNS_PER_PAGE = 10;
@@ -108,6 +110,11 @@ function bindUi() {
     ui.predMarathon = document.getElementById("pred-marathon");
     ui.predictionNote = document.getElementById("prediction-note");
 
+    ui.calPrevBtn = document.getElementById("cal-prev-btn");
+    ui.calNextBtn = document.getElementById("cal-next-btn");
+    ui.calMonthLabel = document.getElementById("cal-month-label");
+    ui.calendarGrid = document.getElementById("calendar-grid");
+
     ui.runsCount = document.getElementById("runs-count");
     ui.runsList = document.getElementById("runs-list");
     ui.runsPagination = document.getElementById("runs-pagination");
@@ -139,6 +146,8 @@ function wireEvents() {
     ui.openAiBtn.addEventListener("click", () => generateCoachPrompt("ChatGPT"));
     ui.geminiBtn.addEventListener("click", () => generateCoachPrompt("Gemini"));
     ui.copyBtn.addEventListener("click", handleCopyPrompt);
+    ui.calPrevBtn.addEventListener("click", () => changeCalendarMonth(-1));
+    ui.calNextBtn.addEventListener("click", () => changeCalendarMonth(1));
     ui.runsPrevBtn.addEventListener("click", () => changeRunsPage(-1));
     ui.runsNextBtn.addEventListener("click", () => changeRunsPage(1));
     ui.downloadAllJsonBtn.addEventListener("click", () => downloadAllRuns("json"));
@@ -772,7 +781,199 @@ function renderDashboard(summary) {
     renderInsight(summary);
     renderPrediction(summary);
     renderWeeklyChart(summary.weeklyTrend);
+    renderCalendar(summary.runs);
     renderRuns(summary.runs);
+}
+
+/**
+ * Render the running activity calendar based on the current state month/year.
+ *
+ * Parameters:
+ * - runs (Array<object>): Normalized run activities to display on the calendar.
+ *
+ * Returns:
+ * - void: This function performs side effects by updating the DOM.
+ */
+function renderCalendar(runs) {
+    if (!ui.calendarGrid || !ui.calMonthLabel) {
+        return;
+    }
+
+    const firstDayOfMonth = new Date(state.calYear, state.calMonth, 1);
+    const lastDayOfMonth = new Date(state.calYear, state.calMonth + 1, 0);
+    const prevMonthLastDay = new Date(state.calYear, state.calMonth, 0);
+
+    ui.calMonthLabel.textContent = `${state.calYear}年 ${state.calMonth + 1}月`;
+
+    const firstDayWeekday = firstDayOfMonth.getDay();
+    const totalDays = lastDayOfMonth.getDate();
+
+    const fragment = document.createDocumentFragment();
+
+    // Previous month days
+    for (let i = firstDayWeekday - 1; i >= 0; i--) {
+        const day = prevMonthLastDay.getDate() - i;
+        fragment.appendChild(createCalendarDay(day, true));
+    }
+
+    // Current month days
+    const today = new Date();
+    const todayStr = toLocalDateKey(today);
+    const activitiesByDate = groupActivitiesByDate(runs);
+
+    for (let i = 1; i <= totalDays; i++) {
+        const date = new Date(state.calYear, state.calMonth, i);
+        const dateStr = toLocalDateKey(date);
+        const activity = activitiesByDate.get(dateStr);
+        const isToday = dateStr === todayStr;
+
+        fragment.appendChild(createCalendarDay(i, false, isToday, activity));
+    }
+
+    // Next month days
+    const remainingSlots = 42 - fragment.children.length;
+    for (let i = 1; i <= remainingSlots; i++) {
+        fragment.appendChild(createCalendarDay(i, true));
+    }
+
+    ui.calendarGrid.innerHTML = "";
+    ui.calendarGrid.appendChild(fragment);
+}
+
+/**
+ * Create a calendar day DOM element.
+ *
+ * Parameters:
+ * - day (number): The day of the month.
+ * - isOtherMonth (boolean): Whether the day belongs to a different month.
+ * - isToday (boolean): Whether the day is today.
+ * - activity (object|null): Activity data for this day, if any.
+ *
+ * Returns:
+ * - HTMLDivElement: The constructed calendar day element.
+ */
+function createCalendarDay(day, isOtherMonth, isToday = false, activity = null) {
+    const el = document.createElement("div");
+    el.className = "calendar-day";
+    if (isOtherMonth) el.classList.add("other-month");
+    if (isToday) el.classList.add("today");
+
+    const dayNum = document.createElement("span");
+    dayNum.textContent = day;
+    el.appendChild(dayNum);
+
+    if (activity) {
+        el.classList.add("has-activity");
+        const dot = document.createElement("div");
+        dot.className = "activity-dot";
+        el.appendChild(dot);
+
+        const dist = document.createElement("span");
+        dist.className = "distance-label";
+        dist.textContent = `${activity.distanceKm.toFixed(1)}k`;
+        el.appendChild(dist);
+
+        el.title = `${activity.name} (${activity.averagePaceLabel})`;
+        el.addEventListener("click", () => {
+            focusRunFromCalendar(activity.id);
+        });
+    }
+
+    return el;
+}
+
+/**
+ * Group run activities by their starting date string (YYYY-MM-DD).
+ *
+ * Parameters:
+ * - runs (Array<object>): Normalized run activities.
+ *
+ * Returns:
+ * - Map<string, object>: Map of date strings to the longest activity on that day.
+ */
+function groupActivitiesByDate(runs) {
+    const map = new Map();
+    runs.forEach((run) => {
+        const dateStr = toLocalDateKey(run.startedAt);
+        // If multiple runs on same day, take the longest one for display
+        if (!map.has(dateStr) || run.distanceKm > map.get(dateStr).distanceKm) {
+            map.set(dateStr, run);
+        }
+    });
+    return map;
+}
+
+/**
+ * Change the currently displayed calendar month.
+ *
+ * Parameters:
+ * - direction (number): Month offset (e.g., -1 or 1).
+ *
+ * Returns:
+ * - void: This function updates state and re-renders the calendar.
+ */
+function changeCalendarMonth(direction) {
+    state.calMonth += direction;
+    if (state.calMonth > 11) {
+        state.calMonth = 0;
+        state.calYear++;
+    } else if (state.calMonth < 0) {
+        state.calMonth = 11;
+        state.calYear--;
+    }
+
+    if (state.summary) {
+        renderCalendar(state.summary.runs);
+    } else {
+        ui.calMonthLabel.textContent = `${state.calYear}年 ${state.calMonth + 1}月`;
+    }
+}
+
+function toLocalDateKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function focusRunFromCalendar(runId) {
+    if (!state.summary || !ui.runsList) {
+        return;
+    }
+
+    const runIndex = state.summary.runs.findIndex((run) => String(run.id) === String(runId));
+    if (runIndex === -1) {
+        return;
+    }
+
+    const targetPage = Math.floor(runIndex / RUNS_PER_PAGE) + 1;
+    if (state.runsPage !== targetPage) {
+        state.runsPage = targetPage;
+        renderRuns(state.summary.runs);
+    }
+
+    const runCard = findRunCardElement(runId);
+    if (!runCard) {
+        return;
+    }
+
+    runCard.scrollIntoView({ behavior: "smooth", block: "center" });
+    flashRunCard(runCard);
+}
+
+function findRunCardElement(runId) {
+    return [...ui.runsList.querySelectorAll(".run-card")].find((card) => card.dataset.runId === String(runId)) || null;
+}
+
+function flashRunCard(runCard) {
+    runCard.classList.remove("highlight-flash");
+    void runCard.offsetWidth;
+    runCard.classList.add("highlight-flash");
+    setTimeout(() => runCard.classList.remove("highlight-flash"), 2000);
 }
 
 function getDisplayBestEffort(summary, target) {
@@ -1179,6 +1380,7 @@ function renderRuns(runs) {
     pageRuns.forEach((run) => {
         const card = document.createElement("article");
         card.className = "run-card";
+        card.dataset.runId = String(run.id);
 
         const badge = run.averageHeartrate
             ? `平均 ${run.averageHeartrate} bpm`
