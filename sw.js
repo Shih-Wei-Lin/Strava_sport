@@ -1,4 +1,4 @@
-const CACHE_NAME = "stride-scope-d09815a";
+const CACHE_NAME = "stride-scope-54c1ceb";
 const ASSETS_TO_CACHE = [
     "./",
     "./index.html",
