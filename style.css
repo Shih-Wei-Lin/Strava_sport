@@ -325,6 +325,45 @@ a:focus-visible {
     gap: 1rem;
 }
 
+.dashboard-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    padding: 0.35rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(153, 174, 190, 0.14);
+    background: rgba(7, 19, 31, 0.88);
+    position: sticky;
+    top: calc(0.5rem + var(--safe-top));
+    z-index: 5;
+    backdrop-filter: blur(16px);
+}
+
+.dashboard-tab {
+    min-height: 2.9rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text-soft);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.dashboard-tab.is-active {
+    color: var(--text);
+    border-color: rgba(94, 234, 212, 0.28);
+    background: linear-gradient(135deg, rgba(94, 234, 212, 0.16), rgba(13, 34, 49, 0.94));
+    transform: translateY(-1px);
+}
+
+.dashboard-panel {
+    display: grid;
+    gap: 1rem;
+}
+
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -882,6 +921,11 @@ a:focus-visible {
 
     .hero h1 {
         font-size: 2.2rem;
+    }
+
+    .dashboard-tabs {
+        grid-template-columns: 1fr;
+        position: static;
     }
 
     .stat-card {

@@ -37,6 +37,7 @@ const state = {
     calMonth: new Date().getMonth(),
     calYear: new Date().getFullYear(),
     calendarHeatmapMode: localStorage.getItem(STORAGE_KEYS.calendarHeatmapMode) || "distance",
+    dashboardTab: "overview",
     installPromptEvent: null,
 };
 
@@ -61,6 +62,8 @@ function bindUi() {
     ui.setupSection = document.getElementById("setup-section");
     ui.authSection = document.getElementById("auth-section");
     ui.dashboard = document.getElementById("dashboard");
+    ui.dashboardTabs = Array.from(document.querySelectorAll("[data-dashboard-tab]"));
+    ui.dashboardPanels = Array.from(document.querySelectorAll("[data-dashboard-panel]"));
 
     ui.clientIdInput = document.getElementById("client-id");
     ui.clientSecretInput = document.getElementById("client-secret");
@@ -161,6 +164,9 @@ function wireEvents() {
     ui.calPrevBtn.addEventListener("click", () => changeCalendarMonth(-1));
     ui.calNextBtn.addEventListener("click", () => changeCalendarMonth(1));
     ui.installAppBtn?.addEventListener("click", handleInstallApp);
+    ui.dashboardTabs.forEach((button) => {
+        button.addEventListener("click", () => setDashboardTab(button.dataset.dashboardTab));
+    });
     ui.heatmapModePills.forEach((button) => {
         button.addEventListener("click", () => setCalendarHeatmapMode(button.dataset.heatmapMode));
     });
@@ -174,6 +180,7 @@ async function initApp() {
     registerServiceWorker();
     bindInstallPrompt();
     refreshInstallUi();
+    syncDashboardTabUi();
     syncHeatmapModeUi();
     hydrateSettingsInputs();
     setActionState(false);
@@ -287,6 +294,29 @@ function refreshInstallUi(installed = false) {
 
 function isIosLike() {
     return /iPhone|iPad|iPod/i.test(window.navigator.userAgent || "");
+}
+
+function setDashboardTab(tab) {
+    if (!["overview", "analysis", "runs"].includes(tab) || state.dashboardTab === tab) {
+        return;
+    }
+
+    state.dashboardTab = tab;
+    syncDashboardTabUi();
+}
+
+function syncDashboardTabUi() {
+    ui.dashboardTabs?.forEach((button) => {
+        const active = button.dataset.dashboardTab === state.dashboardTab;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-selected", String(active));
+        button.tabIndex = active ? 0 : -1;
+    });
+
+    ui.dashboardPanels?.forEach((panel) => {
+        const active = panel.dataset.dashboardPanel === state.dashboardTab;
+        panel.classList.toggle("hidden", !active);
+    });
 }
 
 function hydrateSettingsInputs() {
@@ -1943,20 +1973,20 @@ function renderRunDetail(container, runId, bundle) {
 
 function renderHeartRateZones(summary) {
     if (!summary) {
-        return '<p class="detail-copy">??????????? stream??????????</p>';
+        return '<p class="detail-copy">這次活動沒有足夠的心率資料，無法建立區間分布。</p>';
     }
 
     const description =
         summary.method === "strava-activity-zones"
-            ? "? Strava ????????????????"
+            ? "直接使用 Strava 針對這次活動回傳的官方心率區間。"
             : summary.method === "strava-zones"
-              ? "? Strava ??????????????????"
-              : `Strava ???????????? ${summary.referenceMaxHr} bpm ???????`;
+              ? "使用你在 Strava 帳號中設定的個人心率區間重新判別。"
+              : `Strava 沒有提供個人區間設定，因此改用固定最大心率 ${summary.referenceMaxHr} bpm 估算。`;
 
     const segments = summary.zones
         .map((zone) => {
             return `
-                <div class="zone-segment zone-segment-${zone.label.toLowerCase()}" style="width: ${(zone.share * 100).toFixed(1)}%" title="${zone.label} ? ${zone.rangeLabel} ? ${formatCompactDuration(zone.seconds)}"></div>
+                <div class="zone-segment zone-segment-${zone.label.toLowerCase()}" style="width: ${(zone.share * 100).toFixed(1)}%" title="${zone.label}｜${zone.rangeLabel}｜${formatCompactDuration(zone.seconds)}"></div>
             `;
         })
         .join("");
