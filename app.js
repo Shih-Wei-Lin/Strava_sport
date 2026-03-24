@@ -1,4 +1,5 @@
 import {
+    buildActivityZoneSummary,
     buildHeartRateZoneSummary,
     buildAbilityPrediction,
     calculateBestSegmentEffort,
@@ -1811,7 +1812,7 @@ async function fetchRunDetailBundle(runId) {
         throw new Error("授權已失效，請重新登入 Strava。");
     }
 
-    const [detailResp, streamResp] = await Promise.all([
+    const [detailResp, streamResp, zonesResp] = await Promise.all([
         fetch(`https://www.strava.com/api/v3/activities/${runId}`, {
             headers: { Authorization: `Bearer ${token}` },
         }),
@@ -1821,6 +1822,9 @@ async function fetchRunDetailBundle(runId) {
                 headers: { Authorization: `Bearer ${token}` },
             },
         ),
+        fetch(`https://www.strava.com/api/v3/activities/${runId}/zones`, {
+            headers: { Authorization: `Bearer ${token}` },
+        }),
     ]);
 
     if (!detailResp.ok) {
@@ -1829,8 +1833,9 @@ async function fetchRunDetailBundle(runId) {
 
     const detail = await detailResp.json();
     const streams = streamResp.ok ? await streamResp.json() : {};
+    const zones = zonesResp.ok ? await zonesResp.json() : null;
 
-    const bundle = { detail, streams };
+    const bundle = { detail, streams, zones };
     await saveCachedRunBundle(runId, bundle);
     return bundle;
 }
@@ -1843,10 +1848,12 @@ function renderRunDetail(container, runId, bundle) {
     const calories = detail.calories == null ? "--" : `${Math.round(detail.calories)} kcal`;
     const sufferScore = detail.suffer_score == null ? "--" : String(detail.suffer_score);
     const chartId = `run-chart-${runId}`;
-    const hrZoneSummary = buildHeartRateZoneSummary(bundle.streams, detail, {
-        zoneRanges: state.athleteZones?.heart_rate?.zones || null,
-        referenceMaxHr: FIXED_MAX_HEARTRATE,
-    });
+    const hrZoneSummary =
+        buildActivityZoneSummary(bundle.zones) ||
+        buildHeartRateZoneSummary(bundle.streams, detail, {
+            zoneRanges: state.athleteZones?.heart_rate?.zones || null,
+            referenceMaxHr: FIXED_MAX_HEARTRATE,
+        });
 
     const best5k = calculateBestSegmentEffort(
         {
@@ -1961,7 +1968,7 @@ function renderHeartRateZones(summary) {
 
     return `
         <div class="zone-stack">
-            <p class="detail-copy">${summary.method === "strava-zones" ? "依 Strava 心率區間設定判別這次活動的心率分布。" : `Strava 未提供心率區間設定，改用 ${summary.referenceMaxHr} bpm 作為備援基準。`}</p>
+            <p class="detail-copy">${summary.method === "strava-activity-zones" ? "依 Strava 這次活動回傳的官方心率區間顯示。" : summary.method === "strava-zones" ? "依 Strava 心率區間設定判別這次活動的心率分布。" : `Strava 未提供心率區間設定，改用 ${summary.referenceMaxHr} bpm 作為備援基準。`}</p>
             ${rows}
         </div>
     `;

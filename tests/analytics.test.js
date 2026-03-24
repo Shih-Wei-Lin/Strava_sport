@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 
 import {
+    buildActivityZoneSummary,
     buildHeartRateZoneSummary,
     buildAbilityPrediction,
     calculateBestSegmentEffort,
@@ -200,6 +201,30 @@ test("buildHeartRateZoneSummary prefers Strava zone ranges when provided", () =>
     );
     assert.equal(summary.zones[0].rangeLabel, "100-129 bpm");
     assert.equal(summary.zones[4].rangeLabel, "175-220 bpm");
+});
+
+test("buildActivityZoneSummary maps Strava activity heartrate buckets", () => {
+    const summary = buildActivityZoneSummary([
+        {
+            type: "heartrate",
+            max: 182,
+            distribution_buckets: [
+                { min: 95, max: 119, time: 120 },
+                { min: 120, max: 139, time: 240 },
+                { min: 140, max: 154, time: 360 },
+                { min: 155, max: 169, time: 180 },
+                { min: 170, max: -1, time: 60 },
+            ],
+        },
+    ]);
+
+    assert.equal(summary.method, "strava-activity-zones");
+    assert.equal(summary.referenceMaxHr, 182);
+    assert.deepEqual(
+        summary.zones.map((zone) => Math.round(zone.seconds)),
+        [120, 240, 360, 180, 60],
+    );
+    assert.equal(summary.zones[4].rangeLabel, ">= 170 bpm");
 });
 
 test("formatCompactDuration renders dense time labels for zone summaries", () => {

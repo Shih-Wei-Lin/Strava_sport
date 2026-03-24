@@ -671,6 +671,50 @@ export function buildHeartRateZoneSummary(streams, detail = null, options = {}) 
     };
 }
 
+export function buildActivityZoneSummary(activityZones) {
+    const heartrateZone = Array.isArray(activityZones)
+        ? activityZones.find((zone) => zone?.type === "heartrate" && Array.isArray(zone.distribution_buckets))
+        : null;
+    if (!heartrateZone) {
+        return null;
+    }
+
+    const buckets = heartrateZone.distribution_buckets
+        .map((bucket, index) => ({
+            key: `z${index + 1}`,
+            label: `Z${index + 1}`,
+            seconds: toNumber(bucket.time, 0),
+            min: toNumber(bucket.min, 0),
+            max: Number.isFinite(toNumber(bucket.max, NaN)) && toNumber(bucket.max, NaN) >= 0 ? toNumber(bucket.max, NaN) : Infinity,
+        }))
+        .filter((bucket) => bucket.seconds > 0 || bucket.max > bucket.min || bucket.max === Infinity);
+
+    if (buckets.length === 0) {
+        return null;
+    }
+
+    const totalTimeSec = buckets.reduce((sum, bucket) => sum + bucket.seconds, 0);
+    if (totalTimeSec <= 0) {
+        return null;
+    }
+
+    return {
+        referenceMaxHr: heartrateZone.max == null ? null : Math.round(toNumber(heartrateZone.max, NaN)),
+        totalTimeSec,
+        method: "strava-activity-zones",
+        zones: buckets.map((bucket) => ({
+            key: bucket.key,
+            label: bucket.label,
+            seconds: bucket.seconds,
+            share: bucket.seconds / totalTimeSec,
+            rangeLabel:
+                bucket.max === Infinity
+                    ? `>= ${Math.round(bucket.min)} bpm`
+                    : `${Math.round(bucket.min)}-${Math.round(bucket.max)} bpm`,
+        })),
+    };
+}
+
 export function calculateVdot(distanceMeters, timeSeconds) {
     const distance = toNumber(distanceMeters, NaN);
     const seconds = toNumber(timeSeconds, NaN);
