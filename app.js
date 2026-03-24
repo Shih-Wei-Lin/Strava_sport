@@ -1943,19 +1943,32 @@ function renderRunDetail(container, runId, bundle) {
 
 function renderHeartRateZones(summary) {
     if (!summary) {
-        return '<p class="detail-copy">這筆活動沒有足夠的心率 stream，無法估算區間分布。</p>';
+        return '<p class="detail-copy">??????????? stream??????????</p>';
     }
 
-    const rows = summary.zones
+    const description =
+        summary.method === "strava-activity-zones"
+            ? "? Strava ????????????????"
+            : summary.method === "strava-zones"
+              ? "? Strava ??????????????????"
+              : `Strava ???????????? ${summary.referenceMaxHr} bpm ???????`;
+
+    const segments = summary.zones
         .map((zone) => {
             return `
-                <div class="zone-row">
+                <div class="zone-segment zone-segment-${zone.label.toLowerCase()}" style="width: ${(zone.share * 100).toFixed(1)}%" title="${zone.label} ? ${zone.rangeLabel} ? ${formatCompactDuration(zone.seconds)}"></div>
+            `;
+        })
+        .join("");
+
+    const legend = summary.zones
+        .map((zone) => {
+            return `
+                <div class="zone-legend-item">
+                    <span class="zone-swatch zone-segment-${zone.label.toLowerCase()}"></span>
                     <div class="zone-meta">
                         <strong>${zone.label}</strong>
                         <span>${zone.rangeLabel}</span>
-                    </div>
-                    <div class="zone-bar-track">
-                        <div class="zone-bar-fill" style="width: ${(zone.share * 100).toFixed(1)}%"></div>
                     </div>
                     <div class="zone-values">
                         <strong>${Math.round(zone.share * 100)}%</strong>
@@ -1968,8 +1981,13 @@ function renderHeartRateZones(summary) {
 
     return `
         <div class="zone-stack">
-            <p class="detail-copy">${summary.method === "strava-activity-zones" ? "依 Strava 這次活動回傳的官方心率區間顯示。" : summary.method === "strava-zones" ? "依 Strava 心率區間設定判別這次活動的心率分布。" : `Strava 未提供心率區間設定，改用 ${summary.referenceMaxHr} bpm 作為備援基準。`}</p>
-            ${rows}
+            <p class="detail-copy">${description}</p>
+            <div class="zone-bar-track zone-bar-track-stacked">
+                ${segments}
+            </div>
+            <div class="zone-legend-grid">
+                ${legend}
+            </div>
         </div>
     `;
 }

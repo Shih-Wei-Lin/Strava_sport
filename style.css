@@ -724,13 +724,6 @@ a:focus-visible {
     gap: 0.65rem;
 }
 
-.zone-row {
-    display: grid;
-    grid-template-columns: minmax(4rem, auto) minmax(0, 1fr) auto;
-    gap: 0.7rem;
-    align-items: center;
-}
-
 .zone-meta,
 .zone-values {
     display: grid;
@@ -751,10 +744,55 @@ a:focus-visible {
     border: 1px solid rgba(153, 174, 190, 0.12);
 }
 
-.zone-bar-fill {
+.zone-bar-track-stacked {
+    height: 1rem;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+}
+
+.zone-segment {
     height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, rgba(94, 234, 212, 0.9), rgba(249, 115, 22, 0.85));
+    min-width: 6px;
+    border-radius: 999px;
+}
+
+.zone-segment-z1 {
+    background: #22c55e;
+}
+
+.zone-segment-z2 {
+    background: #84cc16;
+}
+
+.zone-segment-z3 {
+    background: #facc15;
+}
+
+.zone-segment-z4 {
+    background: #fb923c;
+}
+
+.zone-segment-z5 {
+    background: #f43f5e;
+}
+
+.zone-legend-grid {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.zone-legend-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.7rem;
+    align-items: center;
+}
+
+.zone-swatch {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 999px;
 }
 
 @keyframes highlight-flash {
@@ -873,7 +911,7 @@ a:focus-visible {
         gap: 0.5rem;
     }
 
-    .zone-row {
+    .zone-legend-item {
         grid-template-columns: 1fr;
         gap: 0.35rem;
     }
