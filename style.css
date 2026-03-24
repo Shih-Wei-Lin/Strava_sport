@@ -813,18 +813,6 @@ a:focus-visible {
     gap: 0.65rem;
 }
 
-.zone-meta,
-.zone-values {
-    display: grid;
-    gap: 0.15rem;
-}
-
-.zone-meta span,
-.zone-values span {
-    color: var(--text-soft);
-    font-size: 0.8rem;
-}
-
 .zone-bar-track {
     height: 0.62rem;
     border-radius: 999px;
@@ -868,20 +856,37 @@ a:focus-visible {
 
 .zone-legend-grid {
     display: grid;
-    gap: 0.55rem;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
 }
 
 .zone-legend-item {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0.7rem;
+    grid-template-columns: auto auto 1fr auto;
+    gap: 0.45rem;
     align-items: center;
+    padding: 0.5rem 0.65rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(153, 174, 190, 0.1);
 }
 
 .zone-swatch {
     width: 0.8rem;
     height: 0.8rem;
     border-radius: 999px;
+}
+
+.zone-label,
+.zone-share {
+    font-family: "Manrope", sans-serif;
+    font-size: 0.9rem;
+}
+
+.zone-time {
+    justify-self: end;
+    color: var(--text-soft);
+    font-size: 0.78rem;
 }
 
 @keyframes highlight-flash {

@@ -2097,16 +2097,11 @@ function renderHeartRateZones(summary) {
     const legend = summary.zones
         .map((zone) => {
             return `
-                <div class="zone-legend-item">
+                <div class="zone-legend-item" title="${zone.label}｜${zone.rangeLabel}">
                     <span class="zone-swatch zone-segment-${zone.label.toLowerCase()}"></span>
-                    <div class="zone-meta">
-                        <strong>${zone.label}</strong>
-                        <span>${zone.rangeLabel}</span>
-                    </div>
-                    <div class="zone-values">
-                        <strong>${Math.round(zone.share * 100)}%</strong>
-                        <span>${formatCompactDuration(zone.seconds)}</span>
-                    </div>
+                    <strong class="zone-label">${zone.label}</strong>
+                    <span class="zone-time">${formatCompactDuration(zone.seconds)}</span>
+                    <strong class="zone-share">${Math.round(zone.share * 100)}%</strong>
                 </div>
             `;
         })
