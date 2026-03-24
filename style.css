@@ -75,6 +75,41 @@ button {
     top: calc(0.5rem + var(--safe-top));
 }
 
+.pull-refresh-indicator {
+    position: fixed;
+    top: calc(0.5rem + var(--safe-top));
+    left: 50%;
+    z-index: 30;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid rgba(94, 234, 212, 0.2);
+    border-radius: 999px;
+    background: rgba(7, 19, 31, 0.92);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 700;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transform: translate(-50%, -140%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 160ms ease, opacity 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.pull-refresh-indicator.is-visible {
+    opacity: 1;
+}
+
+.pull-refresh-indicator.is-armed {
+    color: var(--text);
+    border-color: rgba(94, 234, 212, 0.42);
+}
+
+.pull-refresh-indicator.is-loading {
+    color: var(--text);
+    border-color: rgba(249, 115, 22, 0.38);
+}
+
 input,
 textarea {
     width: 100%;

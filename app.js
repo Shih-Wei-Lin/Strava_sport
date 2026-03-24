@@ -39,6 +39,13 @@ const state = {
     calendarHeatmapMode: localStorage.getItem(STORAGE_KEYS.calendarHeatmapMode) || "distance",
     dashboardTab: "overview",
     installPromptEvent: null,
+    pullRefresh: {
+        active: false,
+        armed: false,
+        loading: false,
+        startY: 0,
+        distance: 0,
+    },
 };
 
 const RUNS_PER_PAGE = 10;
@@ -58,6 +65,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 function bindUi() {
+    ui.pullRefreshIndicator = document.getElementById("pull-refresh-indicator");
     ui.statusBanner = document.getElementById("status-banner");
     ui.setupSection = document.getElementById("setup-section");
     ui.authSection = document.getElementById("auth-section");
@@ -174,6 +182,7 @@ function wireEvents() {
     ui.runsNextBtn.addEventListener("click", () => changeRunsPage(1));
     ui.downloadAllJsonBtn.addEventListener("click", () => downloadAllRuns("json"));
     ui.downloadAllMdBtn.addEventListener("click", () => downloadAllRuns("md"));
+    bindPullToRefresh();
 }
 
 async function initApp() {
@@ -245,6 +254,100 @@ function bindInstallPrompt() {
         state.installPromptEvent = null;
         refreshInstallUi(true);
     });
+}
+
+function bindPullToRefresh() {
+    window.addEventListener("touchstart", handlePullRefreshStart, { passive: true });
+    window.addEventListener("touchmove", handlePullRefreshMove, { passive: true });
+    window.addEventListener("touchend", handlePullRefreshEnd, { passive: true });
+    window.addEventListener("touchcancel", handlePullRefreshCancel, { passive: true });
+}
+
+function handlePullRefreshStart(event) {
+    if (state.pullRefresh.loading || event.touches.length !== 1) {
+        return;
+    }
+
+    if (window.scrollY > 0 || document.documentElement.scrollTop > 0) {
+        return;
+    }
+
+    state.pullRefresh.active = true;
+    state.pullRefresh.armed = false;
+    state.pullRefresh.startY = event.touches[0].clientY;
+    state.pullRefresh.distance = 0;
+}
+
+function handlePullRefreshMove(event) {
+    if (!state.pullRefresh.active || state.pullRefresh.loading) {
+        return;
+    }
+
+    const distance = Math.max(0, event.touches[0].clientY - state.pullRefresh.startY);
+    state.pullRefresh.distance = Math.min(distance, 132);
+    state.pullRefresh.armed = state.pullRefresh.distance >= 84;
+    syncPullRefreshIndicator();
+}
+
+function handlePullRefreshEnd() {
+    if (!state.pullRefresh.active) {
+        return;
+    }
+
+    const shouldRefresh = state.pullRefresh.armed && !state.pullRefresh.loading;
+    state.pullRefresh.active = false;
+    state.pullRefresh.armed = false;
+    state.pullRefresh.distance = 0;
+
+    if (shouldRefresh) {
+        void triggerPullToRefresh();
+        return;
+    }
+
+    syncPullRefreshIndicator();
+}
+
+function handlePullRefreshCancel() {
+    state.pullRefresh.active = false;
+    state.pullRefresh.armed = false;
+    state.pullRefresh.distance = 0;
+    syncPullRefreshIndicator();
+}
+
+async function triggerPullToRefresh() {
+    state.pullRefresh.loading = true;
+    syncPullRefreshIndicator();
+
+    try {
+        await loadDashboard();
+    } finally {
+        window.setTimeout(() => {
+            state.pullRefresh.loading = false;
+            syncPullRefreshIndicator();
+        }, 320);
+    }
+}
+
+function syncPullRefreshIndicator() {
+    if (!ui.pullRefreshIndicator) {
+        return;
+    }
+
+    const indicator = ui.pullRefreshIndicator;
+    const visible = state.pullRefresh.loading || state.pullRefresh.distance > 12;
+    const offset = state.pullRefresh.loading ? 0 : Math.min(Math.max(state.pullRefresh.distance * 0.45 - 18, -6), 18);
+
+    indicator.classList.toggle("is-visible", visible);
+    indicator.classList.toggle("is-armed", state.pullRefresh.armed && !state.pullRefresh.loading);
+    indicator.classList.toggle("is-loading", state.pullRefresh.loading);
+    indicator.style.transform = visible
+        ? `translate(-50%, ${offset}px)`
+        : "translate(-50%, -140%)";
+    indicator.textContent = state.pullRefresh.loading
+        ? "重新整理中..."
+        : state.pullRefresh.armed
+          ? "放開即可重新整理"
+          : "下拉即可重新整理";
 }
 
 async function handleInstallApp() {
