@@ -13,6 +13,15 @@ import {
     parseStravaLocalDate,
     summariseActivities,
 } from "./analytics.js";
+import {
+    buildAggregateMarkdown,
+    buildAggregateRecord,
+    buildRunExportPayload,
+    downloadJson,
+    downloadText,
+    formatDateForFilename,
+    slugifyFilename,
+} from "./export-utils.js";
 
 const STORAGE_KEYS = {
     clientId: "strava_client_id",
@@ -2266,36 +2275,6 @@ async function downloadRunJson(runId, button) {
 }
 
 /**
- * Build a single-run export payload with optional detail/stream sections.
- *
- * Parameters:
- * - run (object): Normalized summary run object used in dashboard state.
- * - bundle (object|null): Optional run detail bundle containing detail and streams.
- *
- * Returns:
- * - object: JSON-ready export payload.
- *
- * Raises:
- * - No explicit throw. Missing detail data is exported as null/empty structures.
- */
-function buildRunExportPayload(run, bundle) {
-    return {
-        activity_id: run.id,
-        name: run.name,
-        summary: {
-            date: run.dateLabel,
-            distance_km: Number(run.distanceKm.toFixed(2)),
-            moving_time_seconds: run.movingTimeSec,
-            average_pace: run.averagePaceLabel,
-            average_heartrate: run.averageHeartrate,
-            total_elevation_gain_m: Math.round(run.elevationGain),
-        },
-        detail: bundle?.detail || null,
-        streams: bundle?.streams || {},
-    };
-}
-
-/**
  * Download all loaded runs as either a merged JSON file or a Markdown report.
  *
  * Parameters:
@@ -2358,21 +2337,7 @@ async function buildAggregateExportData(runs) {
         const bundle = state.detailCache.has(run.id) ? state.detailCache.get(run.id) : await fetchRunDetailBundle(run.id);
         state.detailCache.set(run.id, bundle);
 
-        records.push({
-            activity_id: run.id,
-            date: run.dateLabel,
-            started_at_local: run.startedAt?.toISOString?.() || null,
-            name: run.name,
-            summary: {
-                distance_km: Number(run.distanceKm.toFixed(2)),
-                moving_time_seconds: run.movingTimeSec,
-                average_pace: run.averagePaceLabel,
-                average_heartrate: run.averageHeartrate,
-                total_elevation_gain_m: Math.round(run.elevationGain),
-            },
-            detail: bundle.detail,
-            streams: bundle.streams,
-        });
+        records.push(buildAggregateRecord(run, bundle));
     }
 
     return {
@@ -2394,141 +2359,6 @@ async function buildAggregateExportData(runs) {
  * Raises:
  * - No explicit throw. Assumes aggregate payload shape is valid.
  */
-function buildAggregateMarkdown(aggregate) {
-    const lines = [
-        "# Strava Runs Aggregate Export",
-        "",
-        `- Exported at: ${aggregate.exported_at}`,
-        `- Run count: ${aggregate.run_count}`,
-        "",
-    ];
-
-    aggregate.runs.forEach((run, index) => {
-        lines.push(`## ${index + 1}. ${run.name}`);
-        lines.push(`- Date: ${run.date}`);
-        lines.push(`- Distance: ${run.summary.distance_km} km`);
-        lines.push(`- Moving time: ${run.summary.moving_time_seconds} sec`);
-        lines.push(`- Average pace: ${run.summary.average_pace}`);
-        lines.push(
-            `- Average heartrate: ${run.summary.average_heartrate == null ? "--" : `${run.summary.average_heartrate} bpm`}`,
-        );
-        lines.push(`- Elevation gain: ${run.summary.total_elevation_gain_m} m`);
-
-        const splits = Array.isArray(run.detail?.splits_metric) ? run.detail.splits_metric.slice(0, 8) : [];
-        if (splits.length > 0) {
-            lines.push("");
-            lines.push("| Km | Pace | HR | Elevation |");
-            lines.push("| --- | --- | --- | --- |");
-            splits.forEach((split) => {
-                const pace = split.average_speed ? formatPaceFromSpeed(split.average_speed) : "--";
-                const hr = split.average_heartrate == null ? "--" : Math.round(split.average_heartrate);
-                const elevation = Math.round(split.elevation_difference || 0);
-                lines.push(`| ${split.split} | ${pace} | ${hr} | ${elevation} m |`);
-            });
-        }
-
-        lines.push("");
-    });
-
-    return lines.join("\n");
-}
-
-/**
- * Download text content as a local file.
- *
- * Parameters:
- * - content (string): The plain text content to save.
- * - filename (string): The target filename for the browser download.
- * - mimeType (string): MIME type for the generated blob.
- *
- * Returns:
- * - void: This helper performs side effects only.
- *
- * Raises:
- * - No explicit throw. Browser download APIs may fail silently in restricted contexts.
- */
-function downloadText(content, filename, mimeType = "text/plain") {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-}
-
-/**
- * Convert a date-like value into YYYY-MM-DD for stable filenames.
- *
- * Parameters:
- * - dateInput (Date|string|number): Input value convertible to Date.
- *
- * Returns:
- * - string: Normalized date label (YYYY-MM-DD), fallback to "unknown-date".
- *
- * Raises:
- * - No explicit throw. Invalid dates return a fallback string.
- */
-function formatDateForFilename(dateInput) {
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    if (Number.isNaN(date.getTime())) {
-        return "unknown-date";
-    }
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-}
-
-/**
- * Sanitize text for safe filename usage.
- *
- * Parameters:
- * - value (string): Original text.
- *
- * Returns:
- * - string: Lower-risk filename segment.
- *
- * Raises:
- * - No explicit throw. Empty results fallback to "run".
- */
-function slugifyFilename(value) {
-    const sanitized = String(value)
-        .trim()
-        .replace(/[^\p{Letter}\p{Number}_-]+/gu, "_")
-        .replace(/_+/g, "_")
-        .replace(/^_+|_+$/g, "");
-
-    return sanitized || "run";
-}
-
-/**
- * Download an object payload as a JSON file.
- *
- * Parameters:
- * - payload (object): JSON-serializable content.
- * - filename (string): Target filename.
- *
- * Returns:
- * - void: This helper performs side effects only.
- *
- * Raises:
- * - No explicit throw. Browser download APIs may fail silently in restricted contexts.
- */
-function downloadJson(payload, filename) {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-}
 
 async function generateCoachPrompt(provider) {
     if (!state.summary || state.summary.runs.length === 0) {
