@@ -588,7 +588,10 @@ export function buildHeartRateZoneSummary(streams, detail = null, options = {}) 
 
     const timeSamples = Array.isArray(streams?.time?.data) ? streams.time.data : [];
     const zoneRanges = Array.isArray(options.zoneRanges) ? options.zoneRanges : null;
-    const referenceMaxHr = toNumber(options.referenceMaxHr, DEFAULT_FIXED_MAX_HEARTRATE);
+    const referenceMaxHr = toNumber(options.maxHr, DEFAULT_FIXED_MAX_HEARTRATE);
+    const restingHr = toNumber(options.restingHr, 0);
+    const useHrr = restingHr > 0 && referenceMaxHr > restingHr;
+
     if (!zoneRanges && (!Number.isFinite(referenceMaxHr) || referenceMaxHr <= 0)) {
         return null;
     }
@@ -597,21 +600,31 @@ export function buildHeartRateZoneSummary(streams, detail = null, options = {}) 
     const sampleFallbackSeconds =
         heartrateSamples.length > 1 ? totalMovingTimeSec / heartrateSamples.length : totalMovingTimeSec;
 
-    const zoneDefs = zoneRanges?.length
-        ? zoneRanges.map((zone, index) => ({
-              key: `z${index + 1}`,
-              label: `Z${index + 1}`,
-              min: toNumber(zone.min, 0),
-              max: Number.isFinite(toNumber(zone.max, NaN)) ? toNumber(zone.max, NaN) : Infinity,
-          }))
-        : [
-              { key: "z1", label: "Z1", minRatio: 0, maxRatio: 0.6 },
+    const zoneDefs = useHrr
+        ? [
+              { key: "z1", label: "Z1", minRatio: 0.5, maxRatio: 0.6 },
               { key: "z2", label: "Z2", minRatio: 0.6, maxRatio: 0.7 },
               { key: "z3", label: "Z3", minRatio: 0.7, maxRatio: 0.8 },
               { key: "z4", label: "Z4", minRatio: 0.8, maxRatio: 0.9 },
-              { key: "z5", label: "Z5", minRatio: 0.9, maxRatio: Infinity },
-          ];
+              { key: "z5", label: "Z5", minRatio: 0.9, maxRatio: 1.0 },
+          ]
+        : zoneRanges?.length
+          ? zoneRanges.map((zone, index) => ({
+                key: `z${index + 1}`,
+                label: `Z${index + 1}`,
+                min: toNumber(zone.min, 0),
+                max: Number.isFinite(toNumber(zone.max, NaN)) ? toNumber(zone.max, NaN) : Infinity,
+            }))
+          : [
+                { key: "z1", label: "Z1", minRatio: 0, maxRatio: 0.6 },
+                { key: "z2", label: "Z2", minRatio: 0.6, maxRatio: 0.7 },
+                { key: "z3", label: "Z3", minRatio: 0.7, maxRatio: 0.8 },
+                { key: "z4", label: "Z4", minRatio: 0.8, maxRatio: 0.9 },
+                { key: "z5", label: "Z5", minRatio: 0.9, maxRatio: Infinity },
+            ];
     const zoneTotals = new Map(zoneDefs.map((zone) => [zone.key, 0]));
+
+    const getHrrValue = (ratio) => (referenceMaxHr - restingHr) * ratio + restingHr;
 
     heartrateSamples.forEach((sample, index) => {
         const hr = toNumber(sample, NaN);
@@ -628,18 +641,24 @@ export function buildHeartRateZoneSummary(streams, detail = null, options = {}) 
             }
         }
 
-        const zone = zoneRanges?.length
-            ? zoneDefs.find((entry, index) => {
-                  if (index === zoneDefs.length - 1) {
-                      return hr >= entry.min;
-                  }
+        const zone = useHrr
+            ? zoneDefs.find((entry) => {
+                  const minHr = getHrrValue(entry.minRatio);
+                  const maxHr = getHrrValue(entry.maxRatio);
+                  return hr >= minHr && hr < maxHr;
+              }) || zoneDefs[zoneDefs.length - 1]
+            : zoneRanges?.length
+              ? zoneDefs.find((entry, index) => {
+                    if (index === zoneDefs.length - 1) {
+                        return hr >= entry.min;
+                    }
 
-                  return hr >= entry.min && hr < entry.max;
-              }) || zoneDefs[0]
-            : zoneDefs.find((entry) => {
-                  const ratio = hr / referenceMaxHr;
-                  return ratio >= entry.minRatio && ratio < entry.maxRatio;
-              }) || zoneDefs[zoneDefs.length - 1];
+                    return hr >= entry.min && hr < entry.max;
+                }) || zoneDefs[0]
+              : zoneDefs.find((entry) => {
+                    const ratio = hr / referenceMaxHr;
+                    return ratio >= entry.minRatio && ratio < entry.maxRatio;
+                }) || zoneDefs[zoneDefs.length - 1];
         zoneTotals.set(zone.key, zoneTotals.get(zone.key) + durationSec);
     });
 
@@ -648,28 +667,31 @@ export function buildHeartRateZoneSummary(streams, detail = null, options = {}) 
         return null;
     }
 
-        return {
-        referenceMaxHr: zoneRanges?.length ? null : Math.round(referenceMaxHr),
+    return {
+        referenceMaxHr: useHrr || !zoneRanges?.length ? Math.round(referenceMaxHr) : null,
+        restingHr: useHrr ? Math.round(restingHr) : null,
         totalTimeSec,
-        method: zoneRanges?.length ? "strava-zones" : "fixed-max",
+        method: useHrr ? "hrr" : zoneRanges?.length ? "strava-zones" : "fixed-max",
         zones: zoneDefs.map((zone) => {
             const seconds = zoneTotals.get(zone.key);
+            const minHr = useHrr ? getHrrValue(zone.minRatio) : !zoneRanges?.length ? zone.minRatio * referenceMaxHr : zone.min;
+            const maxHr = useHrr ? getHrrValue(zone.maxRatio) : !zoneRanges?.length ? zone.maxRatio * referenceMaxHr : zone.max;
+
             return {
                 key: zone.key,
                 label: zone.label,
                 seconds,
                 share: seconds / totalTimeSec,
-                rangeLabel: zoneRanges?.length
-                    ? zone.max === Infinity
+                rangeLabel: useHrr || !zoneRanges?.length
+                    ? (zone.maxRatio === Infinity || (useHrr && zone.maxRatio === 1.0))
+                      ? `>= ${Math.round(minHr)} bpm`
+                      : `${Math.round(minHr)}-${Math.round(maxHr) - 1} bpm`
+                    : zone.max === Infinity
                         ? `>= ${Math.round(zone.min)} bpm`
-                        : `${Math.round(zone.min)}-${Math.round(zone.max)} bpm`
-                    : zone.maxRatio === Infinity
-                      ? `>= ${Math.round(zone.minRatio * referenceMaxHr)} bpm`
-                      : `${Math.round(zone.minRatio * referenceMaxHr)}-${Math.round(zone.maxRatio * referenceMaxHr) - 1} bpm`,
+                        : `${Math.round(zone.min)}-${Math.round(zone.max)} bpm`,
             };
         }),
-    };
-}
+    };}
 
 export function buildActivityZoneSummary(activityZones) {
     const heartrateZone = Array.isArray(activityZones)

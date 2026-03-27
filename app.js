@@ -32,6 +32,8 @@ const STORAGE_KEYS = {
     athleteName: "strava_athlete_name",
     authState: "strava_oauth_state",
     calendarHeatmapMode: "calendar_heatmap_mode",
+    restingHr: "strava_resting_hr",
+    maxHr: "strava_max_hr",
 };
 const FIXED_MAX_HEARTRATE = 190;
 
@@ -84,6 +86,8 @@ function bindUi() {
 
     ui.clientIdInput = document.getElementById("client-id");
     ui.clientSecretInput = document.getElementById("client-secret");
+    ui.restingHrInput = document.getElementById("resting-hr");
+    ui.maxHrInput = document.getElementById("max-hr");
     ui.saveSettingsBtn = document.getElementById("save-settings-btn");
     ui.clearSettingsBtn = document.getElementById("clear-settings-btn");
     ui.editSettingsBtn = document.getElementById("edit-settings-btn");
@@ -434,6 +438,8 @@ function syncDashboardTabUi() {
 function hydrateSettingsInputs() {
     ui.clientIdInput.value = localStorage.getItem(STORAGE_KEYS.clientId) || "";
     ui.clientSecretInput.value = localStorage.getItem(STORAGE_KEYS.clientSecret) || "";
+    ui.restingHrInput.value = localStorage.getItem(STORAGE_KEYS.restingHr) || "";
+    ui.maxHrInput.value = localStorage.getItem(STORAGE_KEYS.maxHr) || "";
 }
 
 /**
@@ -451,6 +457,8 @@ function hydrateSettingsInputs() {
 function handleSaveSettings() {
     const clientId = ui.clientIdInput.value.trim();
     const clientSecret = ui.clientSecretInput.value.trim();
+    const restingHr = ui.restingHrInput.value.trim();
+    const maxHr = ui.maxHrInput.value.trim();
 
     if (!clientId || !clientSecret) {
         setStatus("請完整填入 Strava Client ID 與 Client Secret。", "error");
@@ -459,6 +467,8 @@ function handleSaveSettings() {
 
     localStorage.setItem(STORAGE_KEYS.clientId, clientId);
     localStorage.setItem(STORAGE_KEYS.clientSecret, clientSecret);
+    localStorage.setItem(STORAGE_KEYS.restingHr, restingHr);
+    localStorage.setItem(STORAGE_KEYS.maxHr, maxHr);
     clearTokenStorage();
     setStatus("API 設定已儲存，接著可以開始 Strava 授權。", "success");
     showAuthState();
@@ -480,6 +490,8 @@ function handleClearSettings() {
     localStorage.removeItem(STORAGE_KEYS.clientId);
     localStorage.removeItem(STORAGE_KEYS.clientSecret);
     localStorage.removeItem(STORAGE_KEYS.athleteName);
+    localStorage.removeItem(STORAGE_KEYS.restingHr);
+    localStorage.removeItem(STORAGE_KEYS.maxHr);
     clearTokenStorage();
     state.detailCache.clear();
     hydrateSettingsInputs();
@@ -1990,12 +2002,22 @@ function renderRunDetail(container, runId, bundle) {
     const calories = detail.calories == null ? "--" : `${Math.round(detail.calories)} kcal`;
     const sufferScore = detail.suffer_score == null ? "--" : String(detail.suffer_score);
     const chartId = `run-chart-${runId}`;
-    const hrZoneSummary =
-        buildActivityZoneSummary(bundle.zones) ||
-        buildHeartRateZoneSummary(bundle.streams, detail, {
-            zoneRanges: state.athleteZones?.heart_rate?.zones || null,
-            referenceMaxHr: FIXED_MAX_HEARTRATE,
-        });
+
+    const userRestingHr = Number(localStorage.getItem(STORAGE_KEYS.restingHr) || 0);
+    const userMaxHr = Number(localStorage.getItem(STORAGE_KEYS.maxHr) || 0);
+    const useUserHr = userRestingHr > 0 && userMaxHr > userRestingHr;
+
+    // Use only user-defined HRR if available, otherwise fall back to default logic
+    const hrZoneSummary = useUserHr
+        ? buildHeartRateZoneSummary(bundle.streams, detail, {
+              restingHr: userRestingHr,
+              maxHr: userMaxHr,
+          })
+        : buildActivityZoneSummary(bundle.zones) ||
+          buildHeartRateZoneSummary(bundle.streams, detail, {
+              zoneRanges: state.athleteZones?.heart_rate?.zones || null,
+              maxHr: FIXED_MAX_HEARTRATE,
+          });
 
     const best5k = calculateBestSegmentEffort(
         {
