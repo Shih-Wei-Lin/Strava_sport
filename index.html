@@ -28,7 +28,7 @@
             <div class="hero-copy">
                 <p class="eyebrow">STRAVA PERFORMANCE STUDIO</p>
                 <h1>Stride Scope</h1>
-                <p class="build-meta">Build 7bb3a02</p>
+                <p id="build-meta" class="build-meta">Build 54c1ceb</p>
                 <p class="hero-text">
                     把 Strava 跑步紀錄整理成一個好讀的主控台，快速查看近期跑量、配速、心率、個人最佳與 5K/10K 能力趨勢。
                 </p>
@@ -314,6 +314,17 @@
             </section>
         </section>
     </main>
+
+    <div id="update-toast" class="update-toast hidden" aria-live="assertive" role="alert">
+        <div class="update-toast-content">
+            <span class="update-toast-icon">🚀</span>
+            <div class="update-toast-text">
+                <span class="update-toast-title">新版本已準備就緒</span>
+                <span class="update-toast-desc">點擊更新以採用最新功能。</span>
+            </div>
+            <button id="update-now-btn" class="btn btn-primary btn-sm" type="button">立即更新</button>
+        </div>
+    </div>
 
     <script type="module" src="app.js"></script>
 </body>

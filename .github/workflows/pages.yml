@@ -52,6 +52,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Inject Build Version
+        run: npm run version:update -- ${{ github.sha }}
+
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 

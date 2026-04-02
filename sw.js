@@ -1,4 +1,5 @@
-const CACHE_NAME = "stride-scope-54c1ceb";
+const VERSION = "54c1ceb";
+const CACHE_NAME = `stride-scope-${VERSION}`;
 const ASSETS_TO_CACHE = [
     "./",
     "./index.html",
@@ -15,7 +16,15 @@ self.addEventListener("install", (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE))
     );
-    self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "SKIP_WAITING") {
+        self.skipWaiting();
+    }
+    if (event.data && event.data.type === "GET_VERSION") {
+        event.ports[0].postMessage({ type: "VERSION", version: VERSION });
+    }
 });
 
 self.addEventListener("activate", (event) => {

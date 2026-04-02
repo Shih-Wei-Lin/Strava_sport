@@ -168,6 +168,9 @@ function bindUi() {
     ui.copyBtn = document.getElementById("copy-btn");
     ui.copyToast = document.getElementById("copy-toast");
 
+    ui.updateToast = document.getElementById("update-toast");
+    ui.updateNowBtn = document.getElementById("update-now-btn");
+
     ui.downloadAllJsonBtn.disabled = true;
     ui.downloadAllMdBtn.disabled = true;
 }
@@ -249,10 +252,71 @@ function registerServiceWorker() {
         return;
     }
 
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch((error) => {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) {
+            return;
+        }
+        refreshing = true;
+        window.location.reload();
+    });
+
+    window.addEventListener("load", async () => {
+        try {
+            const registration = await navigator.serviceWorker.register("./sw.js");
+
+            const showUpdateToast = (sw) => {
+                if (!ui.updateToast) {
+                    return;
+                }
+
+                const messageChannel = new MessageChannel();
+                messageChannel.port1.onmessage = (event) => {
+                    if (event.data && event.data.type === "VERSION") {
+                        const newVersion = event.data.version;
+                        const desc = ui.updateToast.querySelector(".update-toast-desc");
+                        if (desc) {
+                            desc.textContent = `偵測到新版本 (${newVersion})，點擊更新以採用最新功能。`;
+                        }
+                    }
+                };
+                sw.postMessage({ type: "GET_VERSION" }, [messageChannel.port2]);
+
+                ui.updateToast.classList.remove("hidden");
+                ui.updateNowBtn?.addEventListener(
+                    "click",
+                    () => {
+                        sw.postMessage({ type: "SKIP_WAITING" });
+                    },
+                    { once: true },
+                );
+            };
+
+            if (registration.waiting) {
+                showUpdateToast(registration.waiting);
+            }
+
+            registration.addEventListener("updatefound", () => {
+                const newWorker = registration.installing;
+                if (!newWorker) {
+                    return;
+                }
+                newWorker.addEventListener("statechange", () => {
+                    if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                        showUpdateToast(newWorker);
+                    }
+                });
+            });
+
+            setInterval(
+                () => {
+                    registration.update().catch(() => null);
+                },
+                60 * 60 * 1000,
+            );
+        } catch (error) {
             console.warn("Service worker registration failed", error);
-        });
+        }
     });
 }
 
@@ -1831,7 +1895,7 @@ function renderRuns(runs) {
             <div class="run-header">
                 <div>
                     <h3 class="run-title">${escapeHtml(run.name)}</h3>
-                    <p class="run-date">${run.dateLabel}</p>
+                    <p id="build-meta" class="build-meta">Build 54c1ceb</p>
                 </div>
                 <span class="run-badge">${badge}</span>
             </div>
