@@ -170,6 +170,8 @@ function bindUi() {
 
     ui.updateToast = document.getElementById("update-toast");
     ui.updateNowBtn = document.getElementById("update-now-btn");
+    ui.updateCloseBtn = document.getElementById("update-close-btn");
+    ui.updateCloseBtn = document.getElementById("update-close-btn");
 
     ui.downloadAllJsonBtn.disabled = true;
     ui.downloadAllMdBtn.disabled = true;
@@ -266,7 +268,7 @@ function registerServiceWorker() {
             const registration = await navigator.serviceWorker.register("./sw.js");
 
             const showUpdateToast = (sw) => {
-                if (!ui.updateToast) {
+                if (!ui.updateToast || !ui.updateToast.classList.contains("hidden")) {
                     return;
                 }
 
@@ -283,6 +285,10 @@ function registerServiceWorker() {
                 sw.postMessage({ type: "GET_VERSION" }, [messageChannel.port2]);
 
                 ui.updateToast.classList.remove("hidden");
+                ui.updateCloseBtn?.addEventListener("click", () => {
+                    ui.updateToast.classList.add("hidden");
+                }, { once: true });
+
                 ui.updateNowBtn?.addEventListener(
                     "click",
                     () => {

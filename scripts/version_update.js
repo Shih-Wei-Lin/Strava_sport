@@ -26,9 +26,9 @@ function updateVersion() {
     // 1. Update sw.js
     if (fs.existsSync(swPath)) {
         let swContent = fs.readFileSync(swPath, "utf8");
-        // Regex to find: const VERSION = "xxxxxxx";
+        // Regex to find: const VERSION = "xxxxxxx"; OR const VERSION = 'xxxxxxx';
         const newSwContent = swContent.replace(
-            /(const VERSION = ")[^"]+(";)/,
+            /(const VERSION = ["'])[^"']+([^"']+["'];)/,
             `$1${shortVersion}$2`
         );
         fs.writeFileSync(swPath, newSwContent, "utf8");

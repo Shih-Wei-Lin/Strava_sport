@@ -23,7 +23,10 @@ self.addEventListener("message", (event) => {
         self.skipWaiting();
     }
     if (event.data && event.data.type === "GET_VERSION") {
-        event.ports[0].postMessage({ type: "VERSION", version: VERSION });
+        const port = event.ports ? event.ports[0] : null;
+        if (port) {
+            port.postMessage({ type: "VERSION", version: VERSION });
+        }
     }
 });
 
