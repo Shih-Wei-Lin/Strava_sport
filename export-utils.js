@@ -119,3 +119,44 @@ export function downloadJson(payload, filename) {
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
 }
+
+/**
+ * High-level function to download a single run's JSON.
+ */
+export async function downloadRunJson(runId, summary, detailCache) {
+    const run = summary?.runs.find(r => r.id === runId);
+    if (!run) return;
+
+    const bundle = detailCache.get(runId);
+    const payload = buildRunExportPayload(run, bundle);
+    const filename = `${formatDateForFilename(run.startedAt || new Date())}_${slugifyFilename(run.name)}.json`;
+    downloadJson(payload, filename);
+}
+
+/**
+ * High-level function to download all runs.
+ */
+export async function downloadAllRuns(format, summary, detailCache) {
+    if (!summary?.runs?.length) return;
+
+    const records = [];
+    for (const run of summary.runs) {
+        const bundle = detailCache.get(run.id);
+        records.push(buildAggregateRecord(run, bundle));
+    }
+
+    const aggregate = {
+        exported_at: new Date().toISOString(),
+        run_count: records.length,
+        runs: records,
+    };
+
+    const timestamp = formatDateForFilename(new Date());
+
+    if (format === "json") {
+        downloadJson(aggregate, `${timestamp}_strava_runs_aggregate.json`);
+    } else {
+        const markdown = buildAggregateMarkdown(aggregate);
+        downloadText(markdown, `${timestamp}_strava_runs_aggregate.md`, "text/markdown");
+    }
+}
