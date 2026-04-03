@@ -171,7 +171,6 @@ function bindUi() {
     ui.updateToast = document.getElementById("update-toast");
     ui.updateNowBtn = document.getElementById("update-now-btn");
     ui.updateCloseBtn = document.getElementById("update-close-btn");
-    ui.updateCloseBtn = document.getElementById("update-close-btn");
 
     ui.downloadAllJsonBtn.disabled = true;
     ui.downloadAllMdBtn.disabled = true;
@@ -1901,7 +1900,7 @@ function renderRuns(runs) {
             <div class="run-header">
                 <div>
                     <h3 class="run-title">${escapeHtml(run.name)}</h3>
-                    <p id="build-meta" class="build-meta">Build 54c1ceb</p>
+                    <p class="run-date">${run.dateLabel}</p>
                 </div>
                 <span class="run-badge">${badge}</span>
             </div>

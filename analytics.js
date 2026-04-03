@@ -490,7 +490,7 @@ export function calculateBestSegmentEffort(run, splitsMetric, targetDistanceKm) 
                 index,
                 distanceMeters,
                 timeSec,
-                averageHeartrate: split.average_heartrate == null ? null : toNumber(split.average_heartrate, NaN),
+                averageHeartrate: (split.average_heartrate != null && Number.isFinite(split.average_heartrate)) ? toNumber(split.average_heartrate, NaN) : null,
                 elevationDifference: toNumber(split.elevation_difference, 0),
             };
         })
@@ -845,10 +845,10 @@ export function buildAbilityPrediction(efforts) {
 }
 
 export function summariseActivities(activities, now = new Date()) {
-    const runs = activities
-        .filter((activity) => activity.type === "Run" || activity.sport_type === "Run")
+    const runs = (Array.isArray(activities) ? activities : [])
+        .filter((activity) => (activity.type === "Run" || activity.sport_type === "Run") && activity.distance > 0)
         .map((activity) => normaliseActivity(activity))
-        .sort((left, right) => right.startedAt - left.startedAt);
+        .sort((left, right) => (right.startedAt?.getTime() || 0) - (left.startedAt?.getTime() || 0));
 
     const weekStart = startOfWeek(now);
     const monthStart = startOfMonth(now);

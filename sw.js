@@ -8,7 +8,7 @@ const ASSETS_TO_CACHE = [
     "./style.css",
     "./manifest.json",
     "./icon.svg",
-    "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap",
+    "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Manrope:wght@500;700;800&display=swap",
     "https://cdn.jsdelivr.net/npm/chart.js"
 ];
 
