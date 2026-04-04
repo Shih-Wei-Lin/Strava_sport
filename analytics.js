@@ -38,6 +38,9 @@ import {
     selectComparableRuns
 } from './analytics/trends.js';
 
+import { detectIntervals } from './analytics/intervals.js';
+import { analyzeWeatherImpact } from './analytics/weather.js';
+
 export {
     toNumber,
     average,
@@ -58,6 +61,8 @@ export {
     calculateRiegelTime,
     predictTimeFromVdot,
     buildAbilityPrediction,
+    detectIntervals,
+    analyzeWeatherImpact,
     buildHeartRateZoneSummary,
     buildActivityZoneSummary,
     getSplitTimeSec,
