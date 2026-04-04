@@ -27,6 +27,7 @@ export const state = {
     runCharts: new Map(),
     weeklyChart: null,
     enrichmentRunId: 0,
+    enrichmentWorker: null,
     runsPage: 1,
     calMonth: new Date().getMonth(),
     calYear: new Date().getFullYear(),
@@ -41,5 +42,3 @@ export const state = {
         distance: 0,
     },
 };
-
-export const ui = {};

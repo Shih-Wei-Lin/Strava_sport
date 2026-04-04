@@ -13,12 +13,13 @@ import { APP_DB_NAME, APP_DB_VERSION, APP_DB_STORES } from "./state.js";
  * - Error: Raised when IndexedDB is unavailable or the open request fails.
  */
 export function openAppDb() {
-    if (!("indexedDB" in window)) {
+    const idb = typeof indexedDB !== 'undefined' ? indexedDB : (typeof self !== 'undefined' ? self.indexedDB : null);
+    if (!idb) {
         return Promise.reject(new Error("Browser does not support IndexedDB."));
     }
 
     return new Promise((resolve, reject) => {
-        const request = window.indexedDB.open(APP_DB_NAME, APP_DB_VERSION);
+        const request = idb.open(APP_DB_NAME, APP_DB_VERSION);
 
         request.onupgradeneeded = () => {
             const database = request.result;
