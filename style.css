@@ -1143,19 +1143,20 @@ a:focus-visible {
     font-size: 0.8rem;
     color: var(--text-soft);
     border-radius: 8px;
-    .calendar-day {
-        font-size: 1rem;
-        border-radius: 10px;
-    }
+}
 
-    .calendar-day .distance-label {
-        font-size: 0.75rem;
-        transform: none;
-    }
-    
-    .chart-wrapper {
-        min-height: 320px;
-    }
+.calendar-day {
+    font-size: 1rem;
+    border-radius: 10px;
+}
+
+.calendar-day .distance-label {
+    font-size: 0.75rem;
+    transform: none;
+}
+
+.chart-wrapper {
+    min-height: 320px;
 }
 
 @media (max-width: 719px) {

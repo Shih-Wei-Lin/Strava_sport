@@ -15,7 +15,8 @@ export function detectIntervals(streams) {
     const heartrate = streams.heartrate?.data || [];
     
     // 1. Calculate average speed and threshold for intervals
-    const avgVelocity = velocity.reduce((a, b) => a + b, 0) / velocity.length;
+    const avgVelocity = velocity.reduce((a, b) => a + b, 0) / (velocity.length || 1);
+    if (avgVelocity === 0) return []; // No movement at all
     const threshold = avgVelocity * 1.12; // 12% faster than average = potential interval
     
     const laps = [];
@@ -78,8 +79,8 @@ export function detectIntervals(streams) {
     return laps.map((lap, idx) => ({
         index: idx + 1,
         distanceM: Math.round(lap.distance),
-        durationSec: lap.duration,
-        avgPace: formatPaceFromSeconds(1000 / lap.avgV),
+        durationSec: Math.round(lap.duration),
+        avgPace: lap.avgV > 0.01 ? formatPaceFromSeconds(1000 / lap.avgV) : '0:00',
         avgHr: lap.avgHr,
         maxHr: null // Could also track max HR here
     }));
