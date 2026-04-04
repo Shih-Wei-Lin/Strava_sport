@@ -1160,3 +1160,69 @@ a:focus-visible {
         display: none;
     }
 }
+/* --- UI Optimizations & Animations --- */
+
+@keyframes shimmer {
+    0% { background-position: -468px 0; }
+    100% { background-position: 468px 0; }
+}
+
+.skeleton {
+    color: transparent !important;
+    background: #f6f7f8;
+    background: linear-gradient(to right, rgba(153, 174, 190, 0.08) 8%, rgba(153, 174, 190, 0.15) 18%, rgba(153, 174, 190, 0.08) 33%);
+    background-size: 800px 104px;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 4px;
+    display: inline-block;
+    min-width: 4rem;
+    pointer-events: none;
+}
+
+.skeleton-text {
+    height: 1em;
+    width: 80%;
+}
+
+.skeleton-card {
+    height: 120px;
+    width: 100%;
+}
+
+.run-card {
+    cursor: pointer;
+    transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.run-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(94, 234, 212, 0.3);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+}
+
+.run-card:active {
+    transform: translateY(0);
+}
+
+.run-card .run-actions {
+    position: relative;
+    z-index: 2; /* Ensure buttons stay clickable */
+}
+
+.dashboard-panel {
+    animation: fadeIn 300ms ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.highlight-flash {
+    animation: flash 2s ease-out;
+}
+
+@keyframes flash {
+    0% { background: rgba(94, 234, 212, 0.25); box-shadow: 0 0 40px rgba(94, 234, 212, 0.3); }
+    100% { background: rgba(255, 255, 255, 0.03); }
+}

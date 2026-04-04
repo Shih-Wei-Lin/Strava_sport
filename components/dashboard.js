@@ -268,3 +268,47 @@ export function buildCoachPrompt(provider, summary, highlightedRuns, detailMap) 
 
     return prompt;
 }
+
+/**
+ * Render skeleton placeholders for top stats.
+ */
+export function renderTopStatsSkeleton() {
+    const ids = [
+        "month-mileage", "month-count", "week-mileage", "week-count",
+        "recent-pace", "recent-hr", "acwr-score", "efficiency-score",
+        "recent-cadence", "elevation-density", "pb-1k", "pb-3k", "pb-5k", "pb-10k"
+    ];
+    ids.forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.innerHTML = '<span class="skeleton" style="width: 60px; height: 1.5rem;"></span>';
+    });
+}
+
+/**
+ * Render skeleton placeholders for insights.
+ */
+export function renderInsightSkeleton() {
+    const headline = document.getElementById("training-headline");
+    const summary = document.getElementById("training-summary");
+    if (headline) headline.innerHTML = '<span class="skeleton" style="width: 200px; height: 1.5rem;"></span>';
+    if (summary) summary.innerHTML = '<span class="skeleton" style="width: 100%; height: 3rem;"></span>';
+
+    const chips = ["recent-load", "longest-run", "pace-delta", "consistency-score", "avg-run-distance", "avg-run-duration", "quality-run-ratio", "hr-delta-trend", "long-run-share"];
+    chips.forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.innerHTML = '<span class="skeleton" style="width: 40px; height: 1rem;"></span>';
+    });
+}
+
+/**
+ * Render skeleton placeholders for predictions.
+ */
+export function renderPredictionSkeleton() {
+    const ids = ["ability-score", "pred-5k", "pred-10k", "pred-half", "pred-marathon"];
+    ids.forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.innerHTML = '<span class="skeleton" style="width: 50px; height: 1.2rem;"></span>';
+    });
+    const source = document.getElementById("prediction-source");
+    if (source) source.innerHTML = '<span class="skeleton" style="width: 120px; height: 1rem;"></span>';
+}

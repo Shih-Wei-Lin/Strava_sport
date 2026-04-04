@@ -11,7 +11,6 @@ import {
 
 /**
  * Render the list of runs based on the current state.
- * @param {Array} runs - Normalized run activities.
  */
 export function renderRuns(runs) {
     const el = {
@@ -45,10 +44,49 @@ export function renderRuns(runs) {
     if (el.runsPrevBtn) el.runsPrevBtn.disabled = state.runsPage <= 1;
     if (el.runsNextBtn) el.runsNextBtn.disabled = state.runsPage >= totalPages;
 
-    // Attach expand listeners
-    el.runsList.querySelectorAll(".btn-expand").forEach((btn) => {
-        btn.addEventListener("click", () => toggleRunDetails(btn.dataset.id));
+    // Attach card-level listeners
+    el.runsList.querySelectorAll(".run-card").forEach((card) => {
+        card.addEventListener("click", (e) => {
+            // Only toggle if we didn't click a button or link
+            if (e.target.closest("button, a")) return;
+            toggleRunDetails(card.id.replace("run-", ""));
+        });
     });
+
+    // Keep individual button listeners but they are now secondary to card click
+    el.runsList.querySelectorAll(".btn-expand").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation(); // Prevent card listener double-fire
+            toggleRunDetails(btn.dataset.id);
+        });
+    });
+}
+
+/**
+ * Render skeleton placeholders for the runs list.
+ */
+export function renderRunsSkeleton() {
+    const runsList = document.getElementById("runs-list");
+    if (!runsList) return;
+
+    const skeletonCard = `
+        <article class="run-card skeleton-card">
+            <div class="run-header">
+                <div>
+                     <div class="skeleton" style="width: 140px; height: 1.2rem; margin-bottom: 0.5rem;"></div>
+                     <div class="skeleton" style="width: 80px; height: 0.8rem;"></div>
+                </div>
+            </div>
+            <div class="run-metrics">
+                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
+                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
+                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
+                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
+            </div>
+        </article>
+    `;
+    
+    runsList.innerHTML = new Array(3).fill(skeletonCard).join("");
 }
 
 function createRunCardHtml(run) {
@@ -162,11 +200,15 @@ export function renderRunDetailsContent(container, run, bundle) {
         </div>
         <div class="run-actions" style="margin-top: 1rem;">
              <button class="btn btn-primary btn-sm btn-download-json" data-id="${run.id}">匯出 JSON</button>
+             <button class="btn btn-ghost btn-sm btn-download-md" data-id="${run.id}">匯出 MD</button>
         </div>
     `;
 
     // Attach actions
     container.querySelector(".btn-download-json")?.addEventListener("click", () => {
         window.dispatchEvent(new CustomEvent("stride:download-run-json", { detail: { runId } }));
+    });
+    container.querySelector(".btn-download-md")?.addEventListener("click", () => {
+        window.dispatchEvent(new CustomEvent("stride:download-run-md", { detail: { runId } }));
     });
 }

@@ -27,8 +27,18 @@ export const DataController = {
     },
 
     async loadDashboard() {
+        const refreshBtn = document.getElementById("refresh-data");
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = "正在載入數據...";
+        }
+
         const token = await ensureValidToken();
         if (!token) {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = "重新整理";
+            }
             const { clientId } = getCredentials();
             if (!clientId) this.authController.showSetupState();
             else this.authController.showAuthState();
@@ -39,9 +49,6 @@ export const DataController = {
         clearStatus();
         this.uiController.renderEmptyDashboard();
         
-        const runsList = document.getElementById("runs-list");
-        if (runsList) runsList.innerHTML = '<p class="empty-state">正在載入跑步資料...</p>';
-
         try {
             const [activities, athleteZones] = await Promise.all([
                 fetchRunActivities(token),
@@ -64,6 +71,11 @@ export const DataController = {
             console.error(err);
             this.authController.showAuthState();
             setStatus(`載入載入失敗：${err.message}`, "error");
+        } finally {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = "重新整理";
+            }
         }
     },
 
