@@ -62,12 +62,22 @@ function wireGlobalEvents() {
     });
 
     // Global Exports
-    document.getElementById("download-all-json")?.addEventListener("click", () => {
+    const downloadAllJsonBtn = getFirstById("download-all-json-btn", "download-all-json");
+    downloadAllJsonBtn?.addEventListener("click", () => {
         import("./export-utils.js").then(m => m.downloadAllRuns("json", state.summary, state.detailCache));
     });
-    document.getElementById("download-all-md")?.addEventListener("click", () => {
+    const downloadAllMdBtn = getFirstById("download-all-md-btn", "download-all-md");
+    downloadAllMdBtn?.addEventListener("click", () => {
         import("./export-utils.js").then(m => m.downloadAllRuns("md", state.summary, state.detailCache));
     });
+}
+
+function getFirstById(...ids) {
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el;
+    }
+    return null;
 }
 
 async function loadAndRenderRunDetails(runId, target) {

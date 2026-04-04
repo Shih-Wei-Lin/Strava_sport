@@ -6,6 +6,14 @@ import {
 } from "../auth.js";
 import { clearCachedDatabase } from "../db.js";
 
+function getByIds(...ids) {
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el;
+    }
+    return null;
+}
+
 export const AuthController = {
     init(onSuccess) {
         this.onSuccess = onSuccess;
@@ -13,9 +21,9 @@ export const AuthController = {
     },
 
     bindEvents() {
-        document.getElementById("save-config")?.addEventListener("click", () => {
-            const clientId = document.getElementById("client-id").value.trim();
-            const clientSecret = document.getElementById("client-secret").value.trim();
+        getByIds("save-config", "save-settings-btn")?.addEventListener("click", () => {
+            const clientId = document.getElementById("client-id")?.value.trim() || "";
+            const clientSecret = document.getElementById("client-secret")?.value.trim() || "";
             localStorage.setItem(STORAGE_KEYS.clientId, clientId);
             localStorage.setItem(STORAGE_KEYS.clientSecret, clientSecret);
             if (this.onSuccess) this.onSuccess();
@@ -35,15 +43,15 @@ export const AuthController = {
     },
 
     showSetupState() {
-        document.getElementById("setup-view")?.classList.remove("hidden");
-        document.getElementById("auth-view")?.classList.add("hidden");
-        document.getElementById("dashboard-view")?.classList.add("hidden");
+        getByIds("setup-view", "setup-section")?.classList.remove("hidden");
+        getByIds("auth-view", "auth-section")?.classList.add("hidden");
+        getByIds("dashboard-view", "dashboard")?.classList.add("hidden");
     },
 
     showAuthState() {
-        document.getElementById("setup-view")?.classList.add("hidden");
-        document.getElementById("auth-view")?.classList.remove("hidden");
-        document.getElementById("dashboard-view")?.classList.add("hidden");
+        getByIds("setup-view", "setup-section")?.classList.add("hidden");
+        getByIds("auth-view", "auth-section")?.classList.remove("hidden");
+        getByIds("dashboard-view", "dashboard")?.classList.add("hidden");
         
         const { clientId } = getCredentials();
         const clientIdInput = document.getElementById("client-id");
@@ -54,8 +62,8 @@ export const AuthController = {
     },
 
     showDashboardState() {
-        document.getElementById("setup-view")?.classList.add("hidden");
-        document.getElementById("auth-view")?.classList.add("hidden");
-        document.getElementById("dashboard-view")?.classList.remove("hidden");
+        getByIds("setup-view", "setup-section")?.classList.add("hidden");
+        getByIds("auth-view", "auth-section")?.classList.add("hidden");
+        getByIds("dashboard-view", "dashboard")?.classList.remove("hidden");
     }
 };

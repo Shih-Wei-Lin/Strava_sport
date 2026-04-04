@@ -16,6 +16,14 @@ import { renderWeeklyChart } from "../components/charts.js";
 import { renderTopStats, renderInsight, renderPrediction } from "../components/dashboard.js";
 import { renderPbGallery } from "../components/pb-gallery.js";
 
+function getByIds(...ids) {
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el;
+    }
+    return null;
+}
+
 export const DataController = {
     init(authController, uiController) {
         this.authController = authController;
@@ -24,11 +32,11 @@ export const DataController = {
     },
 
     bindEvents() {
-        document.getElementById("refresh-data")?.addEventListener("click", () => this.loadDashboard());
+        getByIds("refresh-data", "refresh-data-btn")?.addEventListener("click", () => this.loadDashboard());
     },
 
     async loadDashboard() {
-        const refreshBtn = document.getElementById("refresh-data");
+        const refreshBtn = getByIds("refresh-data", "refresh-data-btn");
         if (refreshBtn) {
             refreshBtn.disabled = true;
             refreshBtn.textContent = "正在載入數據...";
