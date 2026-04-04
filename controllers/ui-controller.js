@@ -6,6 +6,7 @@ import {
     renderInsightSkeleton, 
     renderPredictionSkeleton 
 } from "../components/dashboard.js";
+import { renderPbGallery, renderPbSkeleton } from "../components/pb-gallery.js";
 
 export const UiController = {
     init() {
@@ -62,6 +63,10 @@ export const UiController = {
         document.querySelectorAll(".dashboard-panel").forEach(panel => 
             panel.classList.toggle("hidden", panel.dataset.dashboardPanel !== tabId)
         );
+
+        if (tabId === "pbs" && state.summary) {
+            renderPbGallery(state.summary.runs);
+        }
     },
 
     changeCalendarMonth(offset) {
@@ -118,6 +123,7 @@ export const UiController = {
         renderTopStatsSkeleton();
         renderInsightSkeleton();
         renderPredictionSkeleton();
+        renderPbSkeleton();
         renderRunsSkeleton();
 
         const el = {

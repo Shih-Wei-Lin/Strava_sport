@@ -14,6 +14,7 @@ import { renderCalendar, syncHeatmapModeUi } from "../components/calendar.js";
 import { renderRuns } from "../components/runs-list.js";
 import { renderWeeklyChart } from "../components/charts.js";
 import { renderTopStats, renderInsight, renderPrediction } from "../components/dashboard.js";
+import { renderPbGallery } from "../components/pb-gallery.js";
 
 export const DataController = {
     init(authController, uiController) {
@@ -84,6 +85,7 @@ export const DataController = {
         renderTopStats(summary);
         renderInsight(summary);
         renderPrediction(summary);
+        renderPbGallery(summary.runs);
         renderWeeklyChart(summary.weeklyTrend);
         renderCalendar(summary.runs);
         renderRuns(summary.runs);
@@ -170,6 +172,7 @@ export const DataController = {
         state.summary.prediction = this.buildAbilityPredictionFromSummary(state.summary);
         renderTopStats(state.summary);
         renderPrediction(state.summary);
+        renderPbGallery(state.summary.runs);
     },
 
     buildAbilityPredictionFromSummary(summary) {

@@ -7,11 +7,14 @@ import {
     buildHeartRateZoneSummary,
     formatCompactDuration,
     escapeHtml,
+    detectIntervals,
+    analyzeWeatherImpact,
 } from "../analytics.js";
 
 /**
  * Render the list of runs based on the current state.
  */
+// ... (renderRuns, renderRunsSkeleton, createRunCardHtml remain the same)
 export function renderRuns(runs) {
     const el = {
         runsList: document.getElementById("runs-list"),
@@ -196,6 +199,8 @@ export function renderRunDetailsContent(container, run, bundle) {
                 </p>
             </div>
             ${hrHtml}
+            ${weatherHtml}
+            ${intervalsHtml}
             ${splitsHtml}
         </div>
         <div class="run-actions" style="margin-top: 1rem;">
