@@ -1,23 +1,23 @@
-import { ui } from "./state.js";
-
 /**
  * Update the status banner with a message and visual variant.
  * @param {string} message - Message to display.
  * @param {string} variant - One of 'info', 'success', 'error'.
  */
 export function setStatus(message, variant = "info") {
-    if (!ui.statusBanner) return;
-    ui.statusBanner.textContent = message;
-    ui.statusBanner.className = `status-banner status-${variant}`;
+    const banner = document.getElementById("status-banner");
+    if (!banner) return;
+    banner.textContent = message;
+    banner.className = `status-banner status-${variant}`;
 }
 
 /**
  * Remove any current status message and hide the banner.
  */
 export function clearStatus() {
-    if (!ui.statusBanner) return;
-    ui.statusBanner.textContent = "";
-    ui.statusBanner.className = "status-banner hidden";
+    const banner = document.getElementById("status-banner");
+    if (!banner) return;
+    banner.textContent = "";
+    banner.className = "status-banner hidden";
 }
 
 /**
@@ -25,8 +25,10 @@ export function clearStatus() {
  * @param {boolean} isReady - True if buttons should be enabled.
  */
 export function setActionState(isReady) {
-    if (ui.refreshDataBtn) ui.refreshDataBtn.disabled = !isReady;
-    if (ui.logoutBtn) ui.logoutBtn.disabled = !isReady;
+    const refreshBtn = document.getElementById("refresh-data-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+    if (refreshBtn) refreshBtn.disabled = !isReady;
+    if (logoutBtn) logoutBtn.disabled = !isReady;
 }
 
 /**

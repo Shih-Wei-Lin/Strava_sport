@@ -37,6 +37,10 @@ export function renderPbGallery(summary) {
         `;
     }).join("");
 
+    const maxElevation = summary.runs && summary.runs.length > 0 
+        ? Math.max(...summary.runs.map(r => r.totalElevationGain || 0)) 
+        : 0;
+
     const totalsHtml = `
         <div class="pb-totals">
             <div class="pb-total-item">
@@ -45,7 +49,7 @@ export function renderPbGallery(summary) {
             </div>
             <div class="pb-total-item">
                 <span class="label">最高爬升</span>
-                <span class="value">${Math.round(summary.totals.maxElevationGain)} m</span>
+                <span class="value">${Math.round(maxElevation)} m</span>
             </div>
         </div>
     `;

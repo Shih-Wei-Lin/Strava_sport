@@ -148,6 +148,8 @@ export function renderRunDetailsContent(container, run, bundle) {
     const { detail, streams } = bundle;
     const hrSummary = buildHeartRateZoneSummary(streams, state.athleteZones);
     
+    let weatherHtml = "";
+    let intervalsHtml = "";
     let hrHtml = "";
     if (hrSummary) {
         const zonesHtml = hrSummary.zones.map(z => `
