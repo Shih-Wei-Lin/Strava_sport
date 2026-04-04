@@ -13,12 +13,12 @@ export async function fetchRunActivities(token) {
     const perPage = 100;
 
     try {
-        // Fetch up to 4 pages (400 activities)
-        for (let page = 1; page <= 4; page += 1) {
+        let page = 1;
+        while (page <= 20) { // Safety cap at 2000 activities
             const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-
+            
             if (response.status === 401) {
                 clearTokenStorage();
                 throw new Error("Strava access token 已失效，請重新授權。");
@@ -37,6 +37,7 @@ export async function fetchRunActivities(token) {
             if (pageData.length < perPage) {
                 break;
             }
+            page += 1;
         }
 
         const filteredRuns = activities.filter((activity) => activity.type === "Run" || activity.sport_type === "Run");
