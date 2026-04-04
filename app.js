@@ -57,6 +57,9 @@ function wireGlobalEvents() {
     window.addEventListener("stride:download-run-json", (e) => {
         import("./export-utils.js").then(m => m.downloadRunJson(e.detail.runId, state.summary, state.detailCache));
     });
+    window.addEventListener("stride:download-run-md", (e) => {
+        import("./export-utils.js").then(m => m.downloadRunMd(e.detail.runId, state.summary, state.detailCache));
+    });
 
     // Global Exports
     document.getElementById("download-all-json")?.addEventListener("click", () => {
