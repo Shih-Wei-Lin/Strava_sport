@@ -65,7 +65,7 @@ export const UiController = {
         );
 
         if (tabId === "pbs" && state.summary) {
-            renderPbGallery(state.summary.runs);
+            renderPbGallery(state.summary);
         }
     },
 

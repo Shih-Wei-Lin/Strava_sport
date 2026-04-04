@@ -85,7 +85,7 @@ export const DataController = {
         renderTopStats(summary);
         renderInsight(summary);
         renderPrediction(summary);
-        renderPbGallery(summary.runs);
+        renderPbGallery(summary);
         renderWeeklyChart(summary.weeklyTrend);
         renderCalendar(summary.runs);
         renderRuns(summary.runs);
@@ -172,7 +172,7 @@ export const DataController = {
         state.summary.prediction = this.buildAbilityPredictionFromSummary(state.summary);
         renderTopStats(state.summary);
         renderPrediction(state.summary);
-        renderPbGallery(state.summary.runs);
+        renderPbGallery(state.summary);
     },
 
     buildAbilityPredictionFromSummary(summary) {
