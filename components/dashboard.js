@@ -1,4 +1,3 @@
-import { ui } from "../state.js";
 import { 
     formatDistance, 
     formatPaceFromSeconds, 
@@ -11,46 +10,73 @@ import {
  * @param {object} summary - Activity summary data.
  */
 export function renderTopStats(summary) {
-    if (!ui.monthMileage) return;
-    
-    ui.monthMileage.textContent = formatDistance(summary.totals.monthDistanceKm);
-    ui.monthCount.textContent = `${summary.totals.monthCount} 次跑步`;
-    ui.weekMileage.textContent = formatDistance(summary.totals.weekDistanceKm);
-    ui.weekCount.textContent = `${summary.totals.weekCount} 次跑步`;
+    const el = {
+        monthMileage: document.getElementById("month-mileage"),
+        monthCount: document.getElementById("month-count"),
+        weekMileage: document.getElementById("week-mileage"),
+        weekCount: document.getElementById("week-count"),
+        recentPace: document.getElementById("recent-pace"),
+        recentPaceNote: document.getElementById("recent-pace-note"),
+        recentHr: document.getElementById("recent-hr"),
+        recentHrNote: document.getElementById("recent-hr-note"),
+        acwrScore: document.getElementById("acwr-score"),
+        acwrNote: document.getElementById("acwr-note"),
+        efficiencyScore: document.getElementById("efficiency-score"),
+        efficiencyNote: document.getElementById("efficiency-note"),
+        recentCadence: document.getElementById("recent-cadence"),
+        recentCadenceNote: document.getElementById("recent-cadence-note"),
+        elevationDensity: document.getElementById("elevation-density"),
+        elevationDensityNote: document.getElementById("elevation-density-note"),
+        pb1k: document.getElementById("pb-1k"),
+        pb1kDate: document.getElementById("pb-1k-date"),
+        pb3k: document.getElementById("pb-3k"),
+        pb3kDate: document.getElementById("pb-3k-date"),
+        pb5k: document.getElementById("pb-5k"),
+        pb5kDate: document.getElementById("pb-5k-date"),
+        pb10k: document.getElementById("pb-10k"),
+        pb10kDate: document.getElementById("pb-10k-date"),
+    };
 
-    ui.recentPace.textContent = formatPaceFromSeconds(summary.totals.recentAveragePaceSec);
-    ui.recentPaceNote.textContent = "最近 4 次活動";
+    if (!el.monthMileage) return;
     
-    ui.recentHr.textContent = summary.totals.recentAverageHr == null 
+    el.monthMileage.textContent = formatDistance(summary.totals.monthDistanceKm);
+    el.monthCount.textContent = `${summary.totals.monthCount} 次跑步`;
+    el.weekMileage.textContent = formatDistance(summary.totals.weekDistanceKm);
+    el.weekCount.textContent = `${summary.totals.weekCount} 次跑步`;
+
+    el.recentPace.textContent = formatPaceFromSeconds(summary.totals.recentAveragePaceSec);
+    el.recentPaceNote.textContent = "最近 4 次活動";
+    
+    el.recentHr.textContent = summary.totals.recentAverageHr == null 
         ? "--" : `${Math.round(summary.totals.recentAverageHr)} bpm`;
-    ui.recentHrNote.textContent = "最近 4 次活動";
+    el.recentHrNote.textContent = "最近 4 次活動";
 
-    if (ui.acwrScore && ui.acwrNote) {
-        ui.acwrScore.textContent = formatAcwr(summary.totals.acuteChronicRatio);
-        ui.acwrNote.textContent = explainAcwr(summary.totals.acuteChronicRatio);
+    if (el.acwrScore && el.acwrNote) {
+        el.acwrScore.textContent = formatAcwr(summary.totals.acuteChronicRatio);
+        el.acwrNote.textContent = explainAcwr(summary.totals.acuteChronicRatio);
     }
 
-    if (ui.efficiencyScore && ui.efficiencyNote) {
-        ui.efficiencyScore.textContent = formatEfficiencyIndex(summary.totals.efficiencyIndex);
-        ui.efficiencyNote.textContent = "最近 6 次速度 / 心率";
+    if (el.efficiencyScore && el.efficiencyNote) {
+        el.efficiencyScore.textContent = formatEfficiencyIndex(summary.totals.efficiencyIndex);
+        el.efficiencyNote.textContent = "最近 6 次速度 / 心率";
     }
 
-    if (ui.recentCadence && ui.recentCadenceNote) {
-        ui.recentCadence.textContent = summary.totals.recentCadence == null 
+    if (el.recentCadence && el.recentCadenceNote) {
+        el.recentCadence.textContent = summary.totals.recentCadence == null 
             ? "--" : `${summary.totals.recentCadence.toFixed(1)} spm`;
-        ui.recentCadenceNote.textContent = "最近 6 次活動";
+        el.recentCadenceNote.textContent = "最近 6 次活動";
     }
 
-    if (ui.elevationDensity && ui.elevationDensityNote) {
-        ui.elevationDensity.textContent = summary.totals.elevationPerKm == null 
+    if (el.elevationDensity && el.elevationDensityNote) {
+        el.elevationDensity.textContent = summary.totals.elevationPerKm == null 
             ? "--" : `${summary.totals.elevationPerKm.toFixed(1)} m/km`;
-        ui.elevationDensityNote.textContent = "最近每公里平均爬升";
+        el.elevationDensityNote.textContent = "最近每公里平均爬升";
     }
 
-    renderBestEffort(ui.pb1k, ui.pb1kDate, getDisplayBestEffort(summary, "1K"), "尚未找到 1K 紀錄");
-    renderBestEffort(ui.pb3k, ui.pb3kDate, getDisplayBestEffort(summary, "3K"), "尚未找到 3K 紀錄");
-    renderBestEffort(ui.pb5k, ui.pb5kDate, getDisplayBestEffort(summary, "5K"), "尚未找到 5K 紀錄");
-    renderBestEffort(ui.pb10k, ui.pb10kDate, getDisplayBestEffort(summary, "10K"), "尚未找到 10K 紀錄");
+    renderBestEffort(el.pb1k, el.pb1kDate, getDisplayBestEffort(summary, "1K"), "尚未找到 1K 紀錄");
+    renderBestEffort(el.pb3k, el.pb3kDate, getDisplayBestEffort(summary, "3K"), "尚未找到 3K 紀錄");
+    renderBestEffort(el.pb5k, el.pb5kDate, getDisplayBestEffort(summary, "5K"), "尚未找到 5K 紀錄");
+    renderBestEffort(el.pb10k, el.pb10kDate, getDisplayBestEffort(summary, "10K"), "尚未找到 10K 紀錄");
 }
 
 /**
@@ -58,20 +84,34 @@ export function renderTopStats(summary) {
  * @param {object} summary - Activity summary data.
  */
 export function renderInsight(summary) {
-    if (!ui.trainingHeadline) return;
+    const el = {
+        trainingHeadline: document.getElementById("training-headline"),
+        trainingSummary: document.getElementById("training-summary"),
+        recentLoad: document.getElementById("recent-load"),
+        longestRun: document.getElementById("longest-run"),
+        paceDelta: document.getElementById("pace-delta"),
+        consistencyScore: document.getElementById("consistency-score"),
+        avgRunDistance: document.getElementById("avg-run-distance"),
+        avgRunDuration: document.getElementById("avg-run-duration"),
+        qualityRunRatio: document.getElementById("quality-run-ratio"),
+        hrDeltaTrend: document.getElementById("hr-delta-trend"),
+        longRunShare: document.getElementById("long-run-share"),
+    };
 
-    ui.trainingHeadline.textContent = summary.insight.headline;
-    ui.trainingSummary.textContent = summary.insight.summary;
-    ui.recentLoad.textContent = formatDistance(summary.totals.recentSevenDayDistanceKm);
-    ui.longestRun.textContent = formatDistance(summary.totals.longestRunKm);
-    ui.paceDelta.textContent = formatDeltaPace(summary.insight.paceDeltaSec);
-    ui.consistencyScore.textContent = summary.totals.consistencyScore;
+    if (!el.trainingHeadline) return;
+
+    el.trainingHeadline.textContent = summary.insight.headline;
+    el.trainingSummary.textContent = summary.insight.summary;
+    el.recentLoad.textContent = formatDistance(summary.totals.recentSevenDayDistanceKm);
+    el.longestRun.textContent = formatDistance(summary.totals.longestRunKm);
+    el.paceDelta.textContent = formatDeltaPace(summary.insight.paceDeltaSec);
+    el.consistencyScore.textContent = summary.totals.consistencyScore;
     
-    if (ui.avgRunDistance) ui.avgRunDistance.textContent = formatDistance(summary.totals.averageRunDistanceKm);
-    if (ui.avgRunDuration) ui.avgRunDuration.textContent = summary.totals.averageRunDurationSec == null ? "--" : formatDuration(summary.totals.averageRunDurationSec);
-    if (ui.qualityRunRatio) ui.qualityRunRatio.textContent = formatPercentage(summary.totals.qualityRunRatio);
-    if (ui.hrDeltaTrend) ui.hrDeltaTrend.textContent = formatHrDelta(summary.totals.hrDeltaBpm);
-    if (ui.longRunShare) ui.longRunShare.textContent = formatPercentage(summary.totals.longRunSharePercent);
+    if (el.avgRunDistance) el.avgRunDistance.textContent = formatDistance(summary.totals.averageRunDistanceKm);
+    if (el.avgRunDuration) el.avgRunDuration.textContent = summary.totals.averageRunDurationSec == null ? "--" : formatDuration(summary.totals.averageRunDurationSec);
+    if (el.qualityRunRatio) el.qualityRunRatio.textContent = formatPercentage(summary.totals.qualityRunRatio);
+    if (el.hrDeltaTrend) el.hrDeltaTrend.textContent = formatHrDelta(summary.totals.hrDeltaBpm);
+    if (el.longRunShare) el.longRunShare.textContent = formatPercentage(summary.totals.longRunSharePercent);
 }
 
 /**
@@ -79,30 +119,41 @@ export function renderInsight(summary) {
  * @param {object} summary - Activity summary data.
  */
 export function renderPrediction(summary) {
+    const el = {
+        abilityModel: document.getElementById("ability-model"),
+        abilityScore: document.getElementById("ability-score"),
+        predictionSource: document.getElementById("prediction-source"),
+        pred5k: document.getElementById("pred-5k"),
+        pred10k: document.getElementById("pred-10k"),
+        predHalf: document.getElementById("pred-half"),
+        predMarathon: document.getElementById("pred-marathon"),
+        predictionNote: document.getElementById("prediction-note"),
+    };
+
     const prediction = summary.prediction;
     if (!prediction) {
-        ui.abilityModel.textContent = "VDOT";
-        ui.abilityScore.textContent = "--";
-        ui.predictionSource.textContent = "需要 3K 以上有效資料";
-        ui.pred5k.textContent = "--";
-        ui.pred10k.textContent = "--";
-        ui.predHalf.textContent = "--";
-        ui.predMarathon.textContent = "--";
-        ui.predictionNote.textContent = "目前資料不足，無法預測。";
+        if (el.abilityModel) el.abilityModel.textContent = "VDOT";
+        if (el.abilityScore) el.abilityScore.textContent = "--";
+        if (el.predictionSource) el.predictionSource.textContent = "需要 3K 以上有效資料";
+        if (el.pred5k) el.pred5k.textContent = "--";
+        if (el.pred10k) el.pred10k.textContent = "--";
+        if (el.predHalf) el.predHalf.textContent = "--";
+        if (el.predMarathon) el.predMarathon.textContent = "--";
+        if (el.predictionNote) el.predictionNote.textContent = "目前資料不足，無法預測。";
         return;
     }
 
-    ui.abilityModel.textContent = prediction.model;
-    ui.abilityScore.textContent = prediction.vdot.toFixed(1);
+    if (el.abilityModel) el.abilityModel.textContent = prediction.model;
+    if (el.abilityScore) el.abilityScore.textContent = prediction.vdot.toFixed(1);
 
     const anchor = prediction.anchor;
     const sourceKind = anchor.source === "segment" ? `區段 ${anchor.splitRangeLabel}` : "整筆";
-    ui.predictionSource.textContent = `${anchor.dateLabel} · ${sourceKind}`;
-    ui.pred5k.textContent = prediction.predictions["5K"].vdotTimeLabel;
-    ui.pred10k.textContent = prediction.predictions["10K"].vdotTimeLabel;
-    ui.predHalf.textContent = prediction.predictions.Half.vdotTimeLabel;
-    ui.predMarathon.textContent = prediction.predictions.Marathon.vdotTimeLabel;
-    ui.predictionNote.textContent = `${prediction.caution} Riegel 外推：${prediction.predictions.Marathon.riegelTimeLabel}`;
+    if (el.predictionSource) el.predictionSource.textContent = `${anchor.dateLabel} · ${sourceKind}`;
+    if (el.pred5k) el.pred5k.textContent = prediction.predictions["5K"].vdotTimeLabel;
+    if (el.pred10k) el.pred10k.textContent = prediction.predictions["10K"].vdotTimeLabel;
+    if (el.predHalf) el.predHalf.textContent = prediction.predictions.Half.vdotTimeLabel;
+    if (el.predMarathon) el.predMarathon.textContent = prediction.predictions.Marathon.vdotTimeLabel;
+    if (el.predictionNote) el.predictionNote.textContent = `${prediction.caution} Riegel 外推：${prediction.predictions.Marathon.riegelTimeLabel}`;
 }
 
 // Internal Helpers

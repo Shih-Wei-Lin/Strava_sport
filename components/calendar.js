@@ -1,19 +1,24 @@
-import { state, ui, STORAGE_KEYS } from "../state.js";
-import { formatPaceFromSeconds, formatDuration } from "../analytics.js";
-import { toLocalDateKey } from "../utils.js";
+import { state, STORAGE_KEYS } from "../state.js";
+import { formatPaceFromSeconds, formatDuration, toLocalDateKey } from "../analytics.js";
 
 /**
  * Render the running activity calendar.
  * @param {Array} runs - Normalized run activities.
  */
 export function renderCalendar(runs) {
-    if (!ui.calendarGrid || !ui.calMonthLabel) return;
+    const el = {
+        calendarGrid: document.getElementById("calendar-grid"),
+        calMonthLabel: document.getElementById("cal-month-label"),
+        heatmapLegend: document.getElementById("heatmap-legend"),
+    };
+
+    if (!el.calendarGrid || !el.calMonthLabel) return;
 
     const firstDayOfMonth = new Date(state.calYear, state.calMonth, 1);
     const lastDayOfMonth = new Date(state.calYear, state.calMonth + 1, 0);
     const prevMonthLastDay = new Date(state.calYear, state.calMonth, 0);
 
-    ui.calMonthLabel.textContent = `${state.calYear}年 ${state.calMonth + 1}月`;
+    el.calMonthLabel.textContent = `${state.calYear}年 ${state.calMonth + 1}月`;
 
     const firstDayWeekday = firstDayOfMonth.getDay();
     const totalDays = lastDayOfMonth.getDate();
@@ -38,8 +43,8 @@ export function renderCalendar(runs) {
     
     const intensityMax = getCalendarMetricMax(monthSummaries, state.calendarHeatmapMode);
 
-    if (ui.heatmapLegend) {
-        ui.heatmapLegend.textContent = buildHeatmapLegendText(state.calendarHeatmapMode, intensityMax);
+    if (el.heatmapLegend) {
+        el.heatmapLegend.textContent = buildHeatmapLegendText(state.calendarHeatmapMode, intensityMax);
     }
 
     for (let i = 1; i <= totalDays; i++) {
@@ -57,8 +62,8 @@ export function renderCalendar(runs) {
         fragment.appendChild(createCalendarDay(i, true));
     }
 
-    ui.calendarGrid.innerHTML = "";
-    ui.calendarGrid.appendChild(fragment);
+    el.calendarGrid.innerHTML = "";
+    el.calendarGrid.appendChild(fragment);
 }
 
 function createCalendarDay(day, isOtherMonth, isToday = false, activity = null, intensityMax = 0) {
@@ -193,7 +198,8 @@ function buildHeatmapLegendText(mode, maxValue) {
 }
 
 export function syncHeatmapModeUi() {
-    ui.heatmapModePills?.forEach((button) => {
+    const heatmapModePills = document.querySelectorAll("[data-heatmap-mode]");
+    heatmapModePills?.forEach((button) => {
         const active = button.dataset.heatmapMode === state.calendarHeatmapMode;
         button.classList.toggle("is-active", active);
         button.setAttribute("aria-pressed", String(active));

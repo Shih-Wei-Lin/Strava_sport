@@ -1,17 +1,18 @@
-import { state, ui } from "../state.js";
+import { state } from "../state.js";
 
 /**
  * Render the weekly mileage trend chart.
  * @param {Array} weeklyTrend - Trend data from activity summary.
  */
 export function renderWeeklyChart(weeklyTrend) {
-    if (!window.Chart || !ui.weeklyChartCanvas) return;
+    const weeklyChartCanvas = document.getElementById("weekly-chart");
+    if (!window.Chart || !weeklyChartCanvas) return;
 
     if (state.weeklyChart) {
         state.weeklyChart.destroy();
     }
 
-    state.weeklyChart = new window.Chart(ui.weeklyChartCanvas, {
+    state.weeklyChart = new window.Chart(weeklyChartCanvas, {
         type: "line",
         data: {
             labels: weeklyTrend.map((entry) => entry.label),

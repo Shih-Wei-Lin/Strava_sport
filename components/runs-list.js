@@ -1,5 +1,4 @@
-import { state, ui, RUNS_PER_PAGE } from "../state.js";
-import { escapeHtml } from "../utils.js";
+import { state, RUNS_PER_PAGE } from "../state.js";
 import {
     formatDistance,
     formatDuration,
@@ -7,6 +6,7 @@ import {
     formatPaceFromSpeed,
     buildHeartRateZoneSummary,
     formatCompactDuration,
+    escapeHtml,
 } from "../analytics.js";
 
 /**
@@ -14,13 +14,22 @@ import {
  * @param {Array} runs - Normalized run activities.
  */
 export function renderRuns(runs) {
-    if (!ui.runsList || !ui.runsPagination) return;
+    const el = {
+        runsList: document.getElementById("runs-list"),
+        runsPagination: document.getElementById("runs-pagination"),
+        runsCount: document.getElementById("runs-count"),
+        runsPageInfo: document.getElementById("runs-page-info"),
+        runsPrevBtn: document.getElementById("runs-prev"),
+        runsNextBtn: document.getElementById("runs-next"),
+    };
 
-    ui.runsCount.textContent = `${runs.length} 筆`;
+    if (!el.runsList || !el.runsPagination) return;
+
+    if (el.runsCount) el.runsCount.textContent = `${runs.length} 筆`;
 
     if (runs.length === 0) {
-        ui.runsList.innerHTML = '<p class="empty-state">目前沒有任何跑步活動。</p>';
-        ui.runsPagination.classList.add("hidden");
+        el.runsList.innerHTML = '<p class="empty-state">目前沒有任何跑步活動。</p>';
+        el.runsPagination.classList.add("hidden");
         return;
     }
 
@@ -29,15 +38,15 @@ export function renderRuns(runs) {
     const pageRuns = runs.slice(start, start + RUNS_PER_PAGE);
 
     const html = pageRuns.map((run) => createRunCardHtml(run)).join("");
-    ui.runsList.innerHTML = html;
+    el.runsList.innerHTML = html;
 
-    ui.runsPagination.classList.toggle("hidden", totalPages <= 1);
-    ui.runsPageInfo.textContent = `第 ${state.runsPage} / ${totalPages} 頁`;
-    ui.runsPrevBtn.disabled = state.runsPage <= 1;
-    ui.runsNextBtn.disabled = state.runsPage >= totalPages;
+    el.runsPagination.classList.toggle("hidden", totalPages <= 1);
+    if (el.runsPageInfo) el.runsPageInfo.textContent = `第 ${state.runsPage} / ${totalPages} 頁`;
+    if (el.runsPrevBtn) el.runsPrevBtn.disabled = state.runsPage <= 1;
+    if (el.runsNextBtn) el.runsNextBtn.disabled = state.runsPage >= totalPages;
 
     // Attach expand listeners
-    ui.runsList.querySelectorAll(".btn-expand").forEach((btn) => {
+    el.runsList.querySelectorAll(".btn-expand").forEach((btn) => {
         btn.addEventListener("click", () => toggleRunDetails(btn.dataset.id));
     });
 }
