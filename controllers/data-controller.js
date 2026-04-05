@@ -16,6 +16,18 @@ import { renderWeeklyChart } from "../components/charts.js";
 import { renderTopStats, renderInsight, renderPrediction } from "../components/dashboard.js";
 import { renderPbGallery } from "../components/pb-gallery.js";
 
+/**
+ * Resolve the first existing element by trying multiple candidate ids.
+ *
+ * Parameters:
+ * - ids {...string}: Candidate element ids in lookup priority order.
+ *
+ * Returns:
+ * - {HTMLElement|null}: The first matched element, or `null` if none exists.
+ *
+ * Raises:
+ * - None.
+ */
 function getByIds(...ids) {
     for (const id of ids) {
         const el = document.getElementById(id);
@@ -25,7 +37,7 @@ function getByIds(...ids) {
 }
 
 /**
- * Bind a resilient activation handler that works for touch and click interactions.
+ * Bind an activation handler that is reliable across pointer, click, and keyboard interactions.
  *
  * Parameters:
  * - element {HTMLElement|null}: Target element that should trigger an action.
@@ -43,24 +55,32 @@ function bindButtonActivation(element, action) {
         throw new TypeError("action must be a function.");
     }
 
-    let touchHandled = false;
+    let lastActivationTs = 0;
+    const DEDUPE_WINDOW_MS = 450;
 
-    element.addEventListener("touchend", (event) => {
-        event.preventDefault();
-        touchHandled = true;
+    const invokeAction = () => {
+        lastActivationTs = Date.now();
         Promise.resolve(action()).catch((error) => {
-            console.error("Button activation failed on touch:", error);
+            console.error("Button activation failed:", error);
         });
-    }, { passive: false });
+    };
+
+    element.addEventListener("pointerup", (event) => {
+        if (event.button !== 0) return;
+        invokeAction();
+    });
 
     element.addEventListener("click", () => {
-        if (touchHandled) {
-            touchHandled = false;
+        if (Date.now() - lastActivationTs < DEDUPE_WINDOW_MS) {
             return;
         }
-        Promise.resolve(action()).catch((error) => {
-            console.error("Button activation failed on click:", error);
-        });
+        invokeAction();
+    });
+
+    element.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        invokeAction();
     });
 }
 
@@ -82,14 +102,133 @@ function isAuthFailureError(error) {
 }
 
 export const DataController = {
+    /**
+     * Initialize dependencies and register dashboard-related event listeners.
+     *
+     * Parameters:
+     * - authController {object}: Auth controller instance for auth-state transitions.
+     * - uiController {object}: UI controller instance for rendering helpers.
+     *
+     * Returns:
+     * - {void}: This function does not return a value.
+     *
+     * Raises:
+     * - None.
+     */
     init(authController, uiController) {
         this.authController = authController;
         this.uiController = uiController;
         this.bindEvents();
     },
 
+    /**
+     * Bind refresh interactions, including button activation and pull-to-refresh gesture.
+     *
+     * Parameters:
+     * - None.
+     *
+     * Returns:
+     * - {void}: This function does not return a value.
+     *
+     * Raises:
+     * - None.
+     */
     bindEvents() {
         bindButtonActivation(getByIds("refresh-data", "refresh-data-btn"), () => this.loadDashboard());
+        this.bindPullToRefresh();
+    },
+
+    /**
+     * Bind a lightweight pull-to-refresh gesture for touch devices when scrolled to page top.
+     *
+     * Parameters:
+     * - None.
+     *
+     * Returns:
+     * - {void}: This function does not return a value.
+     *
+     * Raises:
+     * - None.
+     */
+    bindPullToRefresh() {
+        const indicator = document.getElementById("pull-refresh-indicator");
+        if (!indicator) return;
+
+        const THRESHOLD = 84;
+        let startY = 0;
+        let deltaY = 0;
+        let tracking = false;
+        let loading = false;
+
+        const resetIndicator = () => {
+            indicator.classList.remove("is-visible", "is-armed", "is-loading");
+            indicator.style.transform = "translate(-50%, -140%)";
+            indicator.textContent = "下拉即可重新整理";
+        };
+
+        window.addEventListener("touchstart", (event) => {
+            if (loading) return;
+            if (window.scrollY > 0) return;
+            const firstTouch = event.touches[0];
+            if (!firstTouch) return;
+            startY = firstTouch.clientY;
+            deltaY = 0;
+            tracking = true;
+        }, { passive: true });
+
+        window.addEventListener("touchmove", (event) => {
+            if (!tracking || loading) return;
+            const firstTouch = event.touches[0];
+            if (!firstTouch) return;
+
+            deltaY = Math.max(0, firstTouch.clientY - startY);
+            if (deltaY <= 8) {
+                resetIndicator();
+                return;
+            }
+
+            const progress = Math.min(deltaY, 120);
+            indicator.classList.add("is-visible");
+            indicator.style.transform = `translate(-50%, ${-140 + progress * 0.78}%)`;
+            if (deltaY >= THRESHOLD) {
+                indicator.classList.add("is-armed");
+                indicator.textContent = "放開即可重新整理";
+            } else {
+                indicator.classList.remove("is-armed");
+                indicator.textContent = "下拉即可重新整理";
+            }
+        }, { passive: true });
+
+        window.addEventListener("touchend", () => {
+            if (!tracking || loading) return;
+            tracking = false;
+
+            if (deltaY < THRESHOLD) {
+                resetIndicator();
+                return;
+            }
+
+            loading = true;
+            indicator.classList.add("is-visible", "is-loading");
+            indicator.classList.remove("is-armed");
+            indicator.style.transform = "translate(-50%, -10%)";
+            indicator.textContent = "重新整理中...";
+
+            Promise.resolve(this.loadDashboard())
+                .catch((error) => {
+                    console.error("Pull-to-refresh failed:", error);
+                })
+                .finally(() => {
+                    loading = false;
+                    resetIndicator();
+                });
+        }, { passive: true });
+
+        window.addEventListener("touchcancel", () => {
+            tracking = false;
+            deltaY = 0;
+            if (!loading) resetIndicator();
+        }, { passive: true });
     },
 
     /**

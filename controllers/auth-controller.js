@@ -38,12 +38,17 @@ async function performLogout() {
 }
 
 /**
- * Bind a resilient activation handler for both click and touch interfaces.
+ * Bind an activation handler that is reliable across pointer, click, and keyboard interactions.
  *
- * @param {HTMLElement | null} element - Target interactive element.
- * @param {() => void | Promise<void>} action - Callback executed when the element is activated.
- * @returns {void} No return value.
- * @throws {TypeError} Throws when action is not a function.
+ * Parameters:
+ * - element {HTMLElement | null}: Target interactive element.
+ * - action {() => void | Promise<void>}: Callback executed when the element is activated.
+ *
+ * Returns:
+ * - {void}: This function does not return a value.
+ *
+ * Raises:
+ * - {TypeError}: Throws when `action` is not a function.
  */
 function bindButtonActivation(element, action) {
     if (!element) return;
@@ -51,24 +56,32 @@ function bindButtonActivation(element, action) {
         throw new TypeError("action must be a function.");
     }
 
-    let touchHandled = false;
+    let lastActivationTs = 0;
+    const DEDUPE_WINDOW_MS = 450;
 
-    element.addEventListener("touchend", (event) => {
-        event.preventDefault();
-        touchHandled = true;
+    const invokeAction = () => {
+        lastActivationTs = Date.now();
         Promise.resolve(action()).catch((error) => {
-            console.error("Button activation failed on touch:", error);
+            console.error("Button activation failed:", error);
         });
-    }, { passive: false });
+    };
+
+    element.addEventListener("pointerup", (event) => {
+        if (event.button !== 0) return;
+        invokeAction();
+    });
 
     element.addEventListener("click", () => {
-        if (touchHandled) {
-            touchHandled = false;
+        if (Date.now() - lastActivationTs < DEDUPE_WINDOW_MS) {
             return;
         }
-        Promise.resolve(action()).catch((error) => {
-            console.error("Button activation failed on click:", error);
-        });
+        invokeAction();
+    });
+
+    element.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        invokeAction();
     });
 }
 
