@@ -25,6 +25,46 @@ function getByIds(...ids) {
 }
 
 /**
+ * Bind a resilient activation handler that works for touch and click interactions.
+ *
+ * Parameters:
+ * - element {HTMLElement|null}: Target element that should trigger an action.
+ * - action {Function}: Callback invoked when the element is activated.
+ *
+ * Returns:
+ * - {void}: This function does not return a value.
+ *
+ * Raises:
+ * - {TypeError}: Throws when `action` is not a function.
+ */
+function bindButtonActivation(element, action) {
+    if (!element) return;
+    if (typeof action !== "function") {
+        throw new TypeError("action must be a function.");
+    }
+
+    let touchHandled = false;
+
+    element.addEventListener("touchend", (event) => {
+        event.preventDefault();
+        touchHandled = true;
+        Promise.resolve(action()).catch((error) => {
+            console.error("Button activation failed on touch:", error);
+        });
+    }, { passive: false });
+
+    element.addEventListener("click", () => {
+        if (touchHandled) {
+            touchHandled = false;
+            return;
+        }
+        Promise.resolve(action()).catch((error) => {
+            console.error("Button activation failed on click:", error);
+        });
+    });
+}
+
+/**
  * Determine whether an error likely indicates an authentication or authorization failure.
  *
  * Parameters:
@@ -49,7 +89,7 @@ export const DataController = {
     },
 
     bindEvents() {
-        getByIds("refresh-data", "refresh-data-btn")?.addEventListener("click", () => this.loadDashboard());
+        bindButtonActivation(getByIds("refresh-data", "refresh-data-btn"), () => this.loadDashboard());
     },
 
     /**
