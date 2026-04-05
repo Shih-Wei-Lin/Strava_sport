@@ -24,6 +24,23 @@ function getByIds(...ids) {
     return null;
 }
 
+/**
+ * Determine whether an error likely indicates an authentication or authorization failure.
+ *
+ * Parameters:
+ * - error {unknown}: The thrown error value from an async operation.
+ *
+ * Returns:
+ * - {boolean}: `true` when the error message suggests token/authorization problems; otherwise `false`.
+ *
+ * Raises:
+ * - None.
+ */
+function isAuthFailureError(error) {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return /(token|授權|401|403)/i.test(message);
+}
+
 export const DataController = {
     init(authController, uiController) {
         this.authController = authController;
@@ -35,6 +52,18 @@ export const DataController = {
         getByIds("refresh-data", "refresh-data-btn")?.addEventListener("click", () => this.loadDashboard());
     },
 
+    /**
+     * Load dashboard data and render all dashboard components.
+     *
+     * Parameters:
+     * - None.
+     *
+     * Returns:
+     * - {Promise<void>}: Resolves after dashboard loading flow is completed.
+     *
+     * Raises:
+     * - None. Errors are handled internally and surfaced via UI status messages.
+     */
     async loadDashboard() {
         const refreshBtn = getByIds("refresh-data", "refresh-data-btn");
         if (refreshBtn) {
@@ -78,8 +107,13 @@ export const DataController = {
             this.enrichPerformanceInsights(state.enrichmentRunId);
         } catch (err) {
             console.error(err);
-            this.authController.showAuthState();
-            setStatus(`載入載入失敗：${err.message}`, "error");
+            if (isAuthFailureError(err)) {
+                this.authController.showAuthState();
+                setStatus(`資料載入失敗：${err.message}`, "error");
+            } else {
+                setStatus(`資料載入失敗：${err.message}`, "error");
+                this.authController.showDashboardState();
+            }
         } finally {
             if (refreshBtn) {
                 refreshBtn.disabled = false;

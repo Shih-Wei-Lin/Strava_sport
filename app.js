@@ -29,36 +29,43 @@ document.addEventListener("DOMContentLoaded", initApp);
  * - {Error}: Propagates unexpected initialization errors from controller setup or data loading.
  */
 async function initApp() {
-    // Initialize Controllers
-    UiController.init();
-    AuthController.init(() => DataController.loadDashboard());
-    DataController.init(AuthController, UiController);
+    try {
+        // Initialize Controllers
+        UiController.init();
+        AuthController.init(() => DataController.loadDashboard());
+        DataController.init(AuthController, UiController);
 
-    // Global Events that don't fit perfectly in one controller
-    wireGlobalEvents();
-    
-    // Handle OAuth Redirect
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get("code");
-    const incomingState = urlParams.get("state");
-    const error = urlParams.get("error");
+        // Global Events that don't fit perfectly in one controller
+        wireGlobalEvents();
+        
+        // Handle OAuth Redirect
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get("code");
+        const incomingState = urlParams.get("state");
+        const error = urlParams.get("error");
 
-    if (error) {
-        setStatus(`Strava 授權失敗：${error}`, "error");
-        stripAuthParams();
-    } else if (code) {
-        try {
-            setStatus("正在交換 Strava 存取憑證...", "info");
-            await exchangeCodeForToken(code, incomingState);
+        if (error) {
+            setStatus(`Strava 授權失敗：${error}`, "error");
             stripAuthParams();
+        } else if (code) {
+            try {
+                setStatus("正在交換 Strava 存取憑證...", "info");
+                await exchangeCodeForToken(code, incomingState);
+                stripAuthParams();
+                await DataController.loadDashboard();
+            } catch (err) {
+                setStatus(err.message, "error");
+                stripAuthParams();
+                AuthController.showAuthState();
+            }
+        } else {
             await DataController.loadDashboard();
-        } catch (err) {
-            setStatus(err.message, "error");
-            stripAuthParams();
-            AuthController.showAuthState();
         }
-    } else {
-        await DataController.loadDashboard();
+    } catch (error) {
+        console.error("Application initialization failed:", error);
+        const message = error instanceof Error ? error.message : "Unknown startup error";
+        setStatus(`初始化失敗：${message}`, "error");
+        AuthController.showAuthState();
     }
 }
 
