@@ -174,12 +174,15 @@ export function renderRunDetailsContent(container, run, bundle) {
     let intervalsHtml = "";
     let hrHtml = "";
     if (hrSummary) {
-        const zonesHtml = hrSummary.zones.map(z => `
-            <div class="insight-chip">
-                <span>${z.label}</span>
-                <strong>${formatCompactDuration(z.timeSec)} (${z.percent}%)</strong>
-            </div>
-        `).join("");
+        const zonesHtml = hrSummary.zones.map(z => {
+            const percent = (z.share * 100).toFixed(1);
+            return `
+                <div class="insight-chip">
+                    <span>${z.label}</span>
+                    <strong>${formatCompactDuration(z.seconds)} (${percent}%)</strong>
+                </div>
+            `;
+        }).join("");
         hrHtml = `
             <div class="detail-card">
                 <p class="detail-title">心率區間分佈</p>
@@ -212,13 +215,18 @@ export function renderRunDetailsContent(container, run, bundle) {
         </div>
     ` : "";
 
+    // Calculate max display
+    const maxGrade = detail.max_grade ? `${detail.max_grade}%` : "--";
+    const maxWatts = detail.max_watts ? `${Math.round(detail.max_watts)}W` : "--";
+
     container.innerHTML = `
         <div class="run-details-grid">
             <div class="detail-card">
                 <p class="detail-title">訓練負荷與爬升</p>
                 <p class="detail-copy">
-                    總爬升：${Math.round(run.totalElevationGain)}m · 
-                    最大坡度：${detail.max_watts ? `${detail.max_watts}W (估計)` : "--"} · 
+                    總爬升：${Math.round(run.elevationGain || 0)}m · 
+                    最大坡度：${maxGrade} · 
+                    最大功率：${maxWatts} · 
                     卡路里：${detail.calories ? Math.round(detail.calories) : "--"} kcal
                 </p>
             </div>
