@@ -21,14 +21,40 @@ export function clearStatus() {
 }
 
 /**
- * Set the interactive state of primary dashboard buttons.
- * @param {boolean} isReady - True if buttons should be enabled.
+ * Resolve the first existing DOM element by checking a list of candidate ids.
+ *
+ * @param {...string} ids - Candidate element ids in lookup priority order.
+ * @returns {HTMLElement|null} The first matched element, or null when none exist.
  */
-export function setActionState(isReady) {
-    const refreshBtn = document.getElementById("refresh-data-btn");
-    const logoutBtn = document.getElementById("logout-btn");
-    if (refreshBtn) refreshBtn.disabled = !isReady;
-    if (logoutBtn) logoutBtn.disabled = !isReady;
+export function getByIds(...ids) {
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el;
+    }
+    return null;
+}
+
+/**
+ * Bind an activation handler that works reliably on both desktop and touch devices.
+ *
+ * Uses a single "click" listener which is universally supported across all
+ * platforms. Previous pointerup + click dedup logic caused silent failures
+ * on mobile touch devices where event.button could be inconsistent.
+ *
+ * @param {HTMLElement|null} element - Target interactive element.
+ * @param {() => void | Promise<void>} action - Callback executed on activation.
+ */
+export function bindButtonActivation(element, action) {
+    if (!element) return;
+    if (typeof action !== "function") {
+        throw new TypeError("action must be a function.");
+    }
+
+    element.addEventListener("click", () => {
+        Promise.resolve(action()).catch((error) => {
+            console.error("Button activation failed:", error);
+        });
+    });
 }
 
 /**

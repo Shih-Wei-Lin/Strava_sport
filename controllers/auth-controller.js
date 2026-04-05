@@ -5,84 +5,25 @@ import {
     getCredentials
 } from "../auth.js";
 import { clearCachedDatabase } from "../db.js";
-import { setStatus } from "../ui-utils.js";
-
-/**
- * Resolve the first existing element by trying multiple ids.
- *
- * @param {...string} ids - Candidate element ids in lookup priority order.
- * @returns {HTMLElement | null} The first matched element, or null when none exists.
- * @throws {TypeError} Throws when a provided id is not a string.
- */
-function getByIds(...ids) {
-    for (const id of ids) {
-        if (typeof id !== "string") {
-            throw new TypeError("Element id must be a string.");
-        }
-        const el = document.getElementById(id);
-        if (el) return el;
-    }
-    return null;
-}
+import { setStatus, getByIds, bindButtonActivation } from "../ui-utils.js";
 
 /**
  * Clear local auth/cache state and hard-reload the current page.
+ * Uses a 3-second timeout so an IndexedDB hang never blocks the reload.
  *
  * @returns {Promise<void>} A promise that resolves after cache clear and reload are triggered.
- * @throws {Error} Throws when cache clear fails unexpectedly.
  */
 async function performLogout() {
     clearTokenStorage();
-    await clearCachedDatabase();
-    window.location.reload();
-}
-
-/**
- * Bind an activation handler that is reliable across pointer, click, and keyboard interactions.
- *
- * Parameters:
- * - element {HTMLElement | null}: Target interactive element.
- * - action {() => void | Promise<void>}: Callback executed when the element is activated.
- *
- * Returns:
- * - {void}: This function does not return a value.
- *
- * Raises:
- * - {TypeError}: Throws when `action` is not a function.
- */
-function bindButtonActivation(element, action) {
-    if (!element) return;
-    if (typeof action !== "function") {
-        throw new TypeError("action must be a function.");
+    try {
+        await Promise.race([
+            clearCachedDatabase(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))
+        ]);
+    } catch (e) {
+        console.warn("Cache clear failed or timed out, proceeding with logout:", e);
     }
-
-    let lastActivationTs = 0;
-    const DEDUPE_WINDOW_MS = 450;
-
-    const invokeAction = () => {
-        lastActivationTs = Date.now();
-        Promise.resolve(action()).catch((error) => {
-            console.error("Button activation failed:", error);
-        });
-    };
-
-    element.addEventListener("pointerup", (event) => {
-        if (event.button !== 0) return;
-        invokeAction();
-    });
-
-    element.addEventListener("click", () => {
-        if (Date.now() - lastActivationTs < DEDUPE_WINDOW_MS) {
-            return;
-        }
-        invokeAction();
-    });
-
-    element.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        invokeAction();
-    });
+    window.location.reload();
 }
 
 export const AuthController = {

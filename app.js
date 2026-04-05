@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { setStatus, stripAuthParams } from "./ui-utils.js";
+import { setStatus, stripAuthParams, getByIds } from "./ui-utils.js";
 import { exchangeCodeForToken } from "./auth.js";
 
 // Controllers
@@ -100,35 +100,17 @@ function wireGlobalEvents() {
     });
 
     // Global Exports
-    const downloadAllJsonBtn = getFirstById("download-all-json-btn", "download-all-json");
+    const downloadAllJsonBtn = getByIds("download-all-json-btn", "download-all-json");
     downloadAllJsonBtn?.addEventListener("click", () => {
         import("./export-utils.js").then(m => m.downloadAllRuns("json", state.summary, state.detailCache));
     });
-    const downloadAllMdBtn = getFirstById("download-all-md-btn", "download-all-md");
+    const downloadAllMdBtn = getByIds("download-all-md-btn", "download-all-md");
     downloadAllMdBtn?.addEventListener("click", () => {
         import("./export-utils.js").then(m => m.downloadAllRuns("md", state.summary, state.detailCache));
     });
 }
 
-/**
- * Resolve the first existing DOM element by checking a list of candidate ids.
- *
- * Parameters:
- * - ids {...string}: Candidate element ids in lookup order.
- *
- * Returns:
- * - {HTMLElement|null}: The first matched element, or `null` when none exist.
- *
- * Raises:
- * - None.
- */
-function getFirstById(...ids) {
-    for (const id of ids) {
-        const el = document.getElementById(id);
-        if (el) return el;
-    }
-    return null;
-}
+
 
 /**
  * Load a run detail bundle and render the details panel content.

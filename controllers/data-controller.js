@@ -7,7 +7,7 @@ import {
     mergeBestEffort, 
     buildAbilityPrediction 
 } from "../analytics.js";
-import { setStatus, clearStatus } from "../ui-utils.js";
+import { setStatus, clearStatus, getByIds, bindButtonActivation } from "../ui-utils.js";
 
 // Component renders
 import { renderCalendar, syncHeatmapModeUi } from "../components/calendar.js";
@@ -16,73 +16,7 @@ import { renderWeeklyChart } from "../components/charts.js";
 import { renderTopStats, renderInsight, renderPrediction } from "../components/dashboard.js";
 import { renderPbGallery } from "../components/pb-gallery.js";
 
-/**
- * Resolve the first existing element by trying multiple candidate ids.
- *
- * Parameters:
- * - ids {...string}: Candidate element ids in lookup priority order.
- *
- * Returns:
- * - {HTMLElement|null}: The first matched element, or `null` if none exists.
- *
- * Raises:
- * - None.
- */
-function getByIds(...ids) {
-    for (const id of ids) {
-        const el = document.getElementById(id);
-        if (el) return el;
-    }
-    return null;
-}
 
-/**
- * Bind an activation handler that is reliable across pointer, click, and keyboard interactions.
- *
- * Parameters:
- * - element {HTMLElement|null}: Target element that should trigger an action.
- * - action {Function}: Callback invoked when the element is activated.
- *
- * Returns:
- * - {void}: This function does not return a value.
- *
- * Raises:
- * - {TypeError}: Throws when `action` is not a function.
- */
-function bindButtonActivation(element, action) {
-    if (!element) return;
-    if (typeof action !== "function") {
-        throw new TypeError("action must be a function.");
-    }
-
-    let lastActivationTs = 0;
-    const DEDUPE_WINDOW_MS = 450;
-
-    const invokeAction = () => {
-        lastActivationTs = Date.now();
-        Promise.resolve(action()).catch((error) => {
-            console.error("Button activation failed:", error);
-        });
-    };
-
-    element.addEventListener("pointerup", (event) => {
-        if (event.button !== 0) return;
-        invokeAction();
-    });
-
-    element.addEventListener("click", () => {
-        if (Date.now() - lastActivationTs < DEDUPE_WINDOW_MS) {
-            return;
-        }
-        invokeAction();
-    });
-
-    element.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        invokeAction();
-    });
-}
 
 /**
  * Determine whether an error likely indicates an authentication or authorization failure.
@@ -254,7 +188,7 @@ export const DataController = {
         if (!token) {
             if (refreshBtn) {
                 refreshBtn.disabled = false;
-                refreshBtn.textContent = "重新整理";
+                refreshBtn.textContent = "重新整理資料";
             }
             const { clientId } = getCredentials();
             if (!clientId) this.authController.showSetupState();
@@ -296,7 +230,7 @@ export const DataController = {
         } finally {
             if (refreshBtn) {
                 refreshBtn.disabled = false;
-                refreshBtn.textContent = "重新整理";
+                refreshBtn.textContent = "重新整理資料";
             }
         }
     },

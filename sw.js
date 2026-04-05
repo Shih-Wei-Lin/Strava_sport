@@ -1,4 +1,4 @@
-const VERSION = "7225529";
+const VERSION = "7225530";
 const CACHE_NAME = `stride-scope-${VERSION}`;
 const CORE_ASSETS = [
     "./",
@@ -8,6 +8,28 @@ const CORE_ASSETS = [
     "./style.css",
     "./manifest.json",
     "./icon.svg",
+    "./state.js",
+    "./auth.js",
+    "./api.js",
+    "./db.js",
+    "./ui-utils.js",
+    "./export-utils.js",
+    "./controllers/auth-controller.js",
+    "./controllers/data-controller.js",
+    "./controllers/ui-controller.js",
+    "./components/calendar.js",
+    "./components/charts.js",
+    "./components/dashboard.js",
+    "./components/pb-gallery.js",
+    "./components/runs-list.js",
+    "./utils/format.js",
+    "./utils/math.js",
+    "./models/physio.js",
+    "./analytics/segments.js",
+    "./analytics/trends.js",
+    "./analytics/intervals.js",
+    "./analytics/weather.js",
+    "./workers/enrichment.js",
 ];
 
 /**
@@ -146,8 +168,9 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-    event.waitUntil(deleteOldCaches());
-    self.clients.claim();
+    event.waitUntil(
+        deleteOldCaches().then(() => self.clients.claim())
+    );
 });
 
 self.addEventListener("fetch", (event) => {
