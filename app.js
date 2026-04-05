@@ -16,6 +16,18 @@ import { renderRuns, renderRunDetailsContent } from "./components/runs-list.js";
 
 document.addEventListener("DOMContentLoaded", initApp);
 
+/**
+ * Initialize application controllers, OAuth callback handling, and initial dashboard load.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - {Promise<void>}: Resolves when the first dashboard loading flow is completed.
+ *
+ * Raises:
+ * - {Error}: Propagates unexpected initialization errors from controller setup or data loading.
+ */
 async function initApp() {
     // Initialize Controllers
     UiController.init();
@@ -50,10 +62,29 @@ async function initApp() {
     }
 }
 
+/**
+ * Bind global custom events and export actions that coordinate multiple modules.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - {void}: This function does not return a value.
+ *
+ * Raises:
+ * - None.
+ */
 function wireGlobalEvents() {
     // Custom Component Events
     window.addEventListener("stride:focus-run", (e) => focusRunFromCalendar(e.detail.runId));
-    window.addEventListener("stride:load-run-details", (e) => loadAndRenderRunDetails(e.detail.runId, e.detail.target));
+    window.addEventListener("stride:load-run-details", (e) => {
+        loadAndRenderRunDetails(e.detail.runId, e.detail.target).catch((error) => {
+            console.error("Failed to load run details:", error);
+            if (e.detail.target) {
+                e.detail.target.innerHTML = `<p class="detail-copy status-error">載入失敗：${error.message}</p>`;
+            }
+        });
+    });
     window.addEventListener("stride:download-run-json", (e) => {
         import("./export-utils.js").then(m => m.downloadRunJson(e.detail.runId, state.summary, state.detailCache));
     });
@@ -72,6 +103,18 @@ function wireGlobalEvents() {
     });
 }
 
+/**
+ * Resolve the first existing DOM element by checking a list of candidate ids.
+ *
+ * Parameters:
+ * - ids {...string}: Candidate element ids in lookup order.
+ *
+ * Returns:
+ * - {HTMLElement|null}: The first matched element, or `null` when none exist.
+ *
+ * Raises:
+ * - None.
+ */
 function getFirstById(...ids) {
     for (const id of ids) {
         const el = document.getElementById(id);
@@ -80,13 +123,41 @@ function getFirstById(...ids) {
     return null;
 }
 
+/**
+ * Load a run detail bundle and render the details panel content.
+ *
+ * Parameters:
+ * - runId {number|string}: Target run id used to fetch details.
+ * - target {HTMLElement}: Target container for rendered detail content.
+ *
+ * Returns:
+ * - {Promise<void>}: Resolves when detail content has been rendered.
+ *
+ * Raises:
+ * - {Error}: Throws when the detail bundle cannot be loaded.
+ */
 async function loadAndRenderRunDetails(runId, target) {
     const bundle = await DataController.loadRunDetailBundleWithCache(runId);
     state.detailCache.set(runId, bundle);
     const run = state.summary.runs.find(r => r.id === runId);
+    if (!run) {
+        throw new Error(`找不到活動資料 (ID: ${runId})`);
+    }
     renderRunDetailsContent(target, run, bundle);
 }
 
+/**
+ * Focus a run card from calendar selection, including pagination switching and highlight animation.
+ *
+ * Parameters:
+ * - runId {number|string}: Selected run id from calendar interaction.
+ *
+ * Returns:
+ * - {void}: This function does not return a value.
+ *
+ * Raises:
+ * - None.
+ */
 function focusRunFromCalendar(runId) {
     const index = state.summary.runs.findIndex(r => r.id === runId);
     if (index === -1) return;

@@ -3,8 +3,9 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "check": "node --check app.js && node --check analytics.js && node --check export-utils.js",
+        "check": "node --check app.js && node --check analytics.js && node --check api.js && node --check auth.js && node --check db.js && node --check export-utils.js && node --check state.js && node --check ui-utils.js && node --check analytics/intervals.js && node --check analytics/segments.js && node --check analytics/trends.js && node --check analytics/weather.js && node --check components/calendar.js && node --check components/charts.js && node --check components/dashboard.js && node --check components/pb-gallery.js && node --check components/runs-list.js && node --check controllers/auth-controller.js && node --check controllers/data-controller.js && node --check controllers/ui-controller.js && node --check models/physio.js && node --check utils/format.js && node --check utils/math.js && node --check workers/enrichment.js && npm run validate:refactor",
         "test": "node --test tests/analytics.test.js",
+        "validate:refactor": "node scripts/refactor_sanity_check.js",
         "version:update": "node scripts/version_update.js"
     }
 }
