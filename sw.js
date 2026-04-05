@@ -1,6 +1,6 @@
-const VERSION = "54c1ceb";
+const VERSION = "7225529";
 const CACHE_NAME = `stride-scope-${VERSION}`;
-const ASSETS_TO_CACHE = [
+const CORE_ASSETS = [
     "./",
     "./index.html",
     "./app.js",
@@ -8,13 +8,128 @@ const ASSETS_TO_CACHE = [
     "./style.css",
     "./manifest.json",
     "./icon.svg",
-    "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Manrope:wght@500;700;800&display=swap",
-    "https://cdn.jsdelivr.net/npm/chart.js"
 ];
+
+/**
+ * Decide whether a request is a same-origin static asset suitable for stale-while-revalidate.
+ *
+ * Parameters:
+ * - request {Request}: Incoming fetch request.
+ *
+ * Returns:
+ * - {boolean}: `true` when request targets cacheable static resources on the same origin.
+ *
+ * Raises:
+ * - None.
+ */
+function isSameOriginStaticAsset(request) {
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin) return false;
+    return /\.(?:js|css|json|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(url.pathname);
+}
+
+/**
+ * Determine whether a request is an HTML navigation that should prefer fresh network content.
+ *
+ * Parameters:
+ * - request {Request}: Incoming fetch request.
+ *
+ * Returns:
+ * - {boolean}: `true` when request is a top-level navigation or HTML request.
+ *
+ * Raises:
+ * - None.
+ */
+function isNavigationRequest(request) {
+    if (request.mode === "navigate") return true;
+    const accept = request.headers.get("accept") || "";
+    return accept.includes("text/html");
+}
+
+/**
+ * Handle HTML/navigation requests with network-first behavior and cache fallback.
+ *
+ * Parameters:
+ * - request {Request}: Request to resolve.
+ *
+ * Returns:
+ * - {Promise<Response>}: Fresh network response when available, otherwise cached fallback.
+ *
+ * Raises:
+ * - {Error}: Re-throws when both network and cache fallback are unavailable.
+ */
+async function networkFirst(request) {
+    const cache = await caches.open(CACHE_NAME);
+    try {
+        const response = await fetch(request);
+        if (response && response.ok) {
+            await cache.put(request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        throw error;
+    }
+}
+
+/**
+ * Serve static assets quickly from cache while refreshing them in the background.
+ *
+ * Parameters:
+ * - request {Request}: Request to resolve.
+ *
+ * Returns:
+ * - {Promise<Response>}: Cached response when available, otherwise network response.
+ *
+ * Raises:
+ * - {Error}: Re-throws when both cache and network are unavailable.
+ */
+async function staleWhileRevalidate(request) {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    const networkPromise = fetch(request)
+        .then(async (response) => {
+            if (response && response.ok) {
+                await cache.put(request, response.clone());
+            }
+            return response;
+        })
+        .catch(() => null);
+
+    if (cached) {
+        return cached;
+    }
+
+    const networkResponse = await networkPromise;
+    if (networkResponse) return networkResponse;
+    throw new Error(`Resource unavailable: ${request.url}`);
+}
+
+/**
+ * Remove outdated app caches from previous versions.
+ *
+ * Parameters:
+ * - None.
+ *
+ * Returns:
+ * - {Promise<void>}: Resolves after stale caches are removed.
+ *
+ * Raises:
+ * - None.
+ */
+async function deleteOldCaches() {
+    const keys = await caches.keys();
+    await Promise.all(
+        keys
+            .filter((key) => key.startsWith("stride-scope-") && key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+    );
+}
 
 self.addEventListener("install", (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE))
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)),
     );
 });
 
@@ -31,22 +146,22 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-    event.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(
-                keys
-                    .filter((key) => key.startsWith("stride-scope-") && key !== CACHE_NAME)
-                    .map((key) => caches.delete(key)),
-            ),
-        ),
-    );
+    event.waitUntil(deleteOldCaches());
     self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
-    event.respondWith(
-        caches.match(event.request).then((response) => {
-            return response || fetch(event.request);
-        })
-    );
+    if (event.request.method !== "GET") return;
+
+    if (isNavigationRequest(event.request)) {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
+
+    if (isSameOriginStaticAsset(event.request)) {
+        event.respondWith(staleWhileRevalidate(event.request));
+        return;
+    }
+
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });

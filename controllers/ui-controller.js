@@ -36,10 +36,78 @@ export const UiController = {
         this.bindInstallPrompt();
     },
 
-    registerServiceWorker() {
-        if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.register("./sw.js").catch(console.warn);
+    /**
+     * Register the service worker and proactively activate waiting updates.
+     *
+     * Parameters:
+     * - None.
+     *
+     * Returns:
+     * - {Promise<void>}: Resolves when registration flow completes.
+     *
+     * Raises:
+     * - None. Registration errors are caught and logged as warnings.
+     */
+    async registerServiceWorker() {
+        if (!("serviceWorker" in navigator)) return;
+        try {
+            const registration = await navigator.serviceWorker.register("./sw.js");
+            this.bindServiceWorkerUpdateFlow(registration);
+            registration.update().catch(() => {
+                // Ignore manual update check failures and keep the current worker.
+            });
+        } catch (error) {
+            console.warn("Service worker registration failed:", error);
         }
+    },
+
+    /**
+     * Bind update listeners so a newly installed worker can take control immediately.
+     *
+     * Parameters:
+     * - registration {ServiceWorkerRegistration}: Active registration returned by browser.
+     *
+     * Returns:
+     * - {void}: This function does not return a value.
+     *
+     * Raises:
+     * - None.
+     */
+    bindServiceWorkerUpdateFlow(registration) {
+        if (registration.waiting) {
+            this.activateWaitingWorker(registration);
+        }
+        registration.addEventListener("updatefound", () => {
+            const installing = registration.installing;
+            if (!installing) return;
+            installing.addEventListener("statechange", () => {
+                if (installing.state === "installed" && navigator.serviceWorker.controller) {
+                    this.activateWaitingWorker(registration);
+                }
+            });
+        });
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+            if (sessionStorage.getItem("sw-controller-reloaded") === "1") return;
+            sessionStorage.setItem("sw-controller-reloaded", "1");
+            window.location.reload();
+        });
+    },
+
+    /**
+     * Ask a waiting service worker to skip waiting and become the active controller.
+     *
+     * Parameters:
+     * - registration {ServiceWorkerRegistration}: Registration that may hold a waiting worker.
+     *
+     * Returns:
+     * - {void}: This function does not return a value.
+     *
+     * Raises:
+     * - None.
+     */
+    activateWaitingWorker(registration) {
+        registration.waiting?.postMessage({ type: "SKIP_WAITING" });
     },
 
     bindInstallPrompt() {
