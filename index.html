@@ -15,6 +15,31 @@
     <link rel="apple-touch-icon" href="icon.svg">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
+    <script>
+        // Inline error catcher to diagnose module load failures
+        window.onerror = function(msg, url, line, col, error) {
+            const banner = document.getElementById('status-banner');
+            if (banner) {
+                const file = url ? url.split('/').pop() : 'unknown';
+                banner.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                        <strong>偵測到系統錯誤: ${msg}</strong>
+                        <span style="font-size:0.85rem; opacity:0.8;">檔案: ${file}:${line}:${col}</span>
+                        <button onclick="localStorage.clear(); caches.keys().then(ks => Promise.all(ks.map(k=>caches.delete(k)))).then(()=>location.reload(true))" 
+                                style="background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); padding:0.4rem 0.8rem; border-radius:8px; color:white; width:fit-content; margin-top:0.4rem; font-size:0.8rem;">
+                            強制清除快取並重新整理
+                        </button>
+                    </div>
+                `;
+                banner.className = "status-banner status-error";
+                banner.classList.remove('hidden');
+            }
+            return false;
+        };
+        window.onunhandledrejection = function(event) {
+            console.error("Unhandled rejection:", event.reason);
+        };
+    </script>
 </head>
 <body>
     <a class="skip-link" href="#dashboard">跳到分析儀表板</a>
@@ -28,7 +53,7 @@
             <div class="hero-copy">
                 <p class="eyebrow">STRAVA PERFORMANCE STUDIO</p>
                 <h1>Stride Scope</h1>
-                <p id="build-meta" class="build-meta">Build 7225530</p>
+                <p id="build-meta" class="build-meta">Build 7225531</p>
                 <p class="hero-text">
                     把 Strava 跑步紀錄整理成一個好讀的主控台，快速查看近期跑量、配速、心率、個人最佳與 5K/10K 能力趨勢。
                 </p>

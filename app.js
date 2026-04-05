@@ -11,10 +11,18 @@ import { UiController } from "./controllers/ui-controller.js";
 import { renderRuns, renderRunDetailsContent } from "./components/runs-list.js";
 
 /**
- * Main Application Entry Point
+ * Entry Point: Start the application.
  */
-
-document.addEventListener("DOMContentLoaded", initApp);
+initApp().catch(err => {
+    console.error("Initialization error:", err);
+    // Try to use the status banner if it exists
+    const banner = document.getElementById("status-banner");
+    if (banner) {
+        banner.textContent = "系統載入失敗: " + err.message;
+        banner.className = "status-banner status-error";
+        banner.classList.remove("hidden");
+    }
+});
 
 /**
  * Initialize application controllers, OAuth callback handling, and initial dashboard load.

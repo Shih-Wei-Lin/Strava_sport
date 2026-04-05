@@ -20,6 +20,18 @@ export const APP_DB_STORES = {
     bundles: "run_bundles",
 };
 
+/**
+ * Safely retrieve a value from localStorage with a fallback.
+ */
+function getSafeStorage(key, fallback) {
+    try {
+        return localStorage.getItem(key) || fallback;
+    } catch (e) {
+        console.warn(`Storage access blocked for ${key}:`, e);
+        return fallback;
+    }
+}
+
 export const state = {
     summary: null,
     athleteZones: null,
@@ -31,7 +43,7 @@ export const state = {
     runsPage: 1,
     calMonth: new Date().getMonth(),
     calYear: new Date().getFullYear(),
-    calendarHeatmapMode: localStorage.getItem(STORAGE_KEYS.calendarHeatmapMode) || "distance",
+    calendarHeatmapMode: getSafeStorage(STORAGE_KEYS.calendarHeatmapMode, "distance"),
     dashboardTab: "overview",
     installPromptEvent: null,
     pullRefresh: {
