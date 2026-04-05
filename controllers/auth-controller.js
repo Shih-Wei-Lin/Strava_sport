@@ -5,6 +5,7 @@ import {
     getCredentials
 } from "../auth.js";
 import { clearCachedDatabase } from "../db.js";
+import { setStatus } from "../ui-utils.js";
 
 /**
  * Resolve the first existing element by trying multiple ids.
@@ -36,6 +37,41 @@ async function performLogout() {
     window.location.reload();
 }
 
+/**
+ * Bind a resilient activation handler for both click and touch interfaces.
+ *
+ * @param {HTMLElement | null} element - Target interactive element.
+ * @param {() => void | Promise<void>} action - Callback executed when the element is activated.
+ * @returns {void} No return value.
+ * @throws {TypeError} Throws when action is not a function.
+ */
+function bindButtonActivation(element, action) {
+    if (!element) return;
+    if (typeof action !== "function") {
+        throw new TypeError("action must be a function.");
+    }
+
+    let touchHandled = false;
+
+    element.addEventListener("touchend", (event) => {
+        event.preventDefault();
+        touchHandled = true;
+        Promise.resolve(action()).catch((error) => {
+            console.error("Button activation failed on touch:", error);
+        });
+    }, { passive: false });
+
+    element.addEventListener("click", () => {
+        if (touchHandled) {
+            touchHandled = false;
+            return;
+        }
+        Promise.resolve(action()).catch((error) => {
+            console.error("Button activation failed on click:", error);
+        });
+    });
+}
+
 export const AuthController = {
     /**
      * Initialize auth controller and bind all auth related events.
@@ -59,7 +95,7 @@ export const AuthController = {
      * @throws {Error} Throws when the logout flow fails unexpectedly.
      */
     bindEvents() {
-        getByIds("save-config", "save-settings-btn")?.addEventListener("click", () => {
+        bindButtonActivation(getByIds("save-config", "save-settings-btn"), () => {
             const clientId = document.getElementById("client-id")?.value.trim() || "";
             const clientSecret = document.getElementById("client-secret")?.value.trim() || "";
             localStorage.setItem(STORAGE_KEYS.clientId, clientId);
@@ -67,7 +103,7 @@ export const AuthController = {
             if (this.onSuccess) this.onSuccess();
         });
 
-        document.getElementById("login-btn")?.addEventListener("click", () => {
+        bindButtonActivation(document.getElementById("login-btn"), () => {
             const result = startStravaLogin();
             if (result === "SETUP_REQUIRED") this.showSetupState();
         });
@@ -76,27 +112,15 @@ export const AuthController = {
         if (logoutBtn) {
             logoutBtn.disabled = false;
             logoutBtn.style.pointerEvents = "auto";
-            logoutBtn.addEventListener("click", async () => {
-                if (confirm("確定要登出並清除所有本機快取資料嗎？")) {
-                    try {
-                        await performLogout();
-                    } catch (err) {
-                        console.error("Logout failed:", err);
-                        alert("登出失敗，請稍後再試。");
-                    }
+            bindButtonActivation(logoutBtn, async () => {
+                setStatus("正在登出並清除本機快取...", "info");
+                try {
+                    await performLogout();
+                } catch (err) {
+                    console.error("Logout failed:", err);
+                    setStatus("登出失敗，請稍後再試。", "error");
                 }
             });
-            logoutBtn.addEventListener("touchend", async (event) => {
-                event.preventDefault();
-                if (confirm("確定要登出並清除所有本機快取資料嗎？")) {
-                    try {
-                        await performLogout();
-                    } catch (err) {
-                        console.error("Logout failed:", err);
-                        alert("登出失敗，請稍後再試。");
-                    }
-                }
-            }, { passive: false });
         }
     },
 
