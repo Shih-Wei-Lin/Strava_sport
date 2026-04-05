@@ -60,17 +60,28 @@ export function renderRuns(runs) {
     // Attach card-level listeners
     el.runsList.querySelectorAll(".run-card").forEach((card) => {
         card.addEventListener("click", (e) => {
-            // Only toggle if we didn't click a button or link
-            if (e.target.closest("button, a")) return;
-            toggleRunDetails(card.id.replace("run-", ""));
-        });
-    });
+            const runId = card.id.replace("run-", "");
+            
+            // 1. IF click is on a button or link, handle logic but don't toggle
+            const actionBtn = e.target.closest("button, a");
+            if (actionBtn) {
+                if (actionBtn.classList.contains("btn-download-json")) {
+                    window.dispatchEvent(new CustomEvent("stride:download-run-json", { detail: { runId } }));
+                } else if (actionBtn.classList.contains("btn-download-md")) {
+                    window.dispatchEvent(new CustomEvent("stride:download-run-md", { detail: { runId } }));
+                } else if (actionBtn.classList.contains("btn-expand")) {
+                    toggleRunDetails(runId);
+                }
+                return;
+            }
 
-    // Keep individual button listeners but they are now secondary to card click
-    el.runsList.querySelectorAll(".btn-expand").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-            e.stopPropagation(); // Prevent card listener double-fire
-            toggleRunDetails(btn.dataset.id);
+            // 2. IF click is inside the detail analysis content, don't toggle (prevents chart click closing)
+            if (e.target.closest(".run-details")) {
+                return;
+            }
+
+            // 3. Otherwise, toggle detail view
+            toggleRunDetails(runId);
         });
     });
 }
@@ -121,8 +132,10 @@ function createRunCardHtml(run) {
                 <div class="metric-box"><span class="metric-label">心率</span><strong class="metric-value">${run.averageHeartrate ? Math.round(run.averageHeartrate) : "--"} bpm</strong></div>
             </div>
             <div class="run-actions">
-                <button class="btn btn-ghost btn-sm btn-expand" data-id="${run.id}">詳細分析</button>
-                <a href="https://www.strava.com/activities/${run.id}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">開啟 Strava</a>
+                <button class="btn btn-primary btn-sm btn-expand" data-id="${run.id}">詳細分析</button>
+                <button class="btn btn-ghost btn-sm btn-download-json" data-id="${run.id}">JSON</button>
+                <button class="btn btn-ghost btn-sm btn-download-md" data-id="${run.id}">MD</button>
+                <a href="https://www.strava.com/activities/${run.id}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Strava</a>
             </div>
             <div id="run-details-${run.id}" class="run-details hidden"></div>
         </article>
@@ -237,23 +250,11 @@ export function renderRunDetailsContent(container, run, bundle) {
             ${intervalsHtml || ""}
             ${splitsHtml}
         </div>
-        <div class="run-actions" style="margin-top: 1rem;">
-             <button class="btn btn-primary btn-sm btn-download-json" data-id="${run.id}">匯出 JSON</button>
-             <button class="btn btn-ghost btn-sm btn-download-md" data-id="${run.id}">匯出 MD</button>
-        </div>
     `;
 
     // Trigger chart rendering after a short delay to ensure canvas is ready
     setTimeout(() => {
         renderActivityDetailCharts(run.id, bundle, hrSummary);
     }, 60);
-
-    // Attach actions
-    container.querySelector(".btn-download-json")?.addEventListener("click", () => {
-        window.dispatchEvent(new CustomEvent("stride:download-run-json", { detail: { runId: run.id } }));
-    });
-    container.querySelector(".btn-download-md")?.addEventListener("click", () => {
-        window.dispatchEvent(new CustomEvent("stride:download-run-md", { detail: { runId: run.id } }));
-    });
 }
 
