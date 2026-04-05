@@ -168,7 +168,7 @@ export async function toggleRunDetails(runId) {
  */
 export function renderRunDetailsContent(container, run, bundle) {
     const { detail, streams } = bundle;
-    const hrSummary = buildHeartRateZoneSummary(streams, state.athleteZones);
+    const hrSummary = buildHeartRateZoneSummary(streams, detail, state.athleteZones);
     
     let weatherHtml = "";
     let intervalsHtml = "";
