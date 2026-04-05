@@ -12,17 +12,25 @@ import {
 } from "../analytics.js";
 
 /**
- * Render the list of runs based on the current state.
+ * Render the run cards and pagination controls for the current page.
+ *
+ * Parameters:
+ * - runs {Array<object>}: Summarized run records to be rendered.
+ *
+ * Returns:
+ * - {void}: This function does not return a value.
+ *
+ * Raises:
+ * - None.
  */
-// ... (renderRuns, renderRunsSkeleton, createRunCardHtml remain the same)
 export function renderRuns(runs) {
     const el = {
         runsList: document.getElementById("runs-list"),
         runsPagination: document.getElementById("runs-pagination"),
         runsCount: document.getElementById("runs-count"),
         runsPageInfo: document.getElementById("runs-page-info"),
-        runsPrevBtn: document.getElementById("runs-prev"),
-        runsNextBtn: document.getElementById("runs-next"),
+        runsPrevBtn: document.getElementById("runs-prev-btn"),
+        runsNextBtn: document.getElementById("runs-next-btn"),
     };
 
     if (!el.runsList || !el.runsPagination) return;
@@ -144,6 +152,20 @@ export async function toggleRunDetails(runId) {
     }
 }
 
+/**
+ * Render the expanded run details panel using fetched detail and stream bundle data.
+ *
+ * Parameters:
+ * - container {HTMLElement}: Destination element for run details markup.
+ * - run {object}: Summary object for the selected run card.
+ * - bundle {object}: Detailed activity payload that includes `detail` and `streams`.
+ *
+ * Returns:
+ * - {void}: This function does not return a value.
+ *
+ * Raises:
+ * - None.
+ */
 export function renderRunDetailsContent(container, run, bundle) {
     const { detail, streams } = bundle;
     const hrSummary = buildHeartRateZoneSummary(streams, state.athleteZones);
@@ -213,9 +235,9 @@ export function renderRunDetailsContent(container, run, bundle) {
 
     // Attach actions
     container.querySelector(".btn-download-json")?.addEventListener("click", () => {
-        window.dispatchEvent(new CustomEvent("stride:download-run-json", { detail: { runId } }));
+        window.dispatchEvent(new CustomEvent("stride:download-run-json", { detail: { runId: run.id } }));
     });
     container.querySelector(".btn-download-md")?.addEventListener("click", () => {
-        window.dispatchEvent(new CustomEvent("stride:download-run-md", { detail: { runId } }));
+        window.dispatchEvent(new CustomEvent("stride:download-run-md", { detail: { runId: run.id } }));
     });
 }
