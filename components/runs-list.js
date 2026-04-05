@@ -11,6 +11,8 @@ import {
     analyzeWeatherImpact,
 } from "../analytics.js";
 
+import { renderActivityDetailCharts } from "./charts.js";
+
 /**
  * Render the run cards and pagination controls for the current page.
  *
@@ -162,9 +164,6 @@ export async function toggleRunDetails(runId) {
  *
  * Returns:
  * - {void}: This function does not return a value.
- *
- * Raises:
- * - None.
  */
 export function renderRunDetailsContent(container, run, bundle) {
     const { detail, streams } = bundle;
@@ -172,24 +171,6 @@ export function renderRunDetailsContent(container, run, bundle) {
     
     let weatherHtml = "";
     let intervalsHtml = "";
-    let hrHtml = "";
-    if (hrSummary) {
-        const zonesHtml = hrSummary.zones.map(z => {
-            const percent = (z.share * 100).toFixed(1);
-            return `
-                <div class="insight-chip">
-                    <span>${z.label}</span>
-                    <strong>${formatCompactDuration(z.seconds)} (${percent}%)</strong>
-                </div>
-            `;
-        }).join("");
-        hrHtml = `
-            <div class="detail-card">
-                <p class="detail-title">心率區間分佈</p>
-                <div class="chip-grid compact-chip-grid">${zonesHtml}</div>
-            </div>
-        `;
-    }
 
     const splits = detail.splits_metric || [];
     const splitsHtml = splits.length > 0 ? `
@@ -221,8 +202,29 @@ export function renderRunDetailsContent(container, run, bundle) {
 
     container.innerHTML = `
         <div class="run-details-grid">
+            <div class="detail-card full-width">
+                <p class="detail-title">性能趨勢 (左軸：配速 / 右軸：心率)</p>
+                <div class="chart-container" style="height: 200px;">
+                    <canvas id="run-perf-chart-${run.id}"></canvas>
+                </div>
+            </div>
+
+            <div class="detail-card full-width">
+                <p class="detail-title">海拔高度 (左軸：高度趨勢)</p>
+                <div class="chart-container" style="height: 180px;">
+                    <canvas id="run-elev-chart-${run.id}"></canvas>
+                </div>
+            </div>
+
             <div class="detail-card">
-                <p class="detail-title">訓練負荷與爬升</p>
+                <p class="detail-title">心率區間分佈</p>
+                <div class="chart-container" style="height: 180px;">
+                    <canvas id="hr-zones-chart-${run.id}"></canvas>
+                </div>
+            </div>
+
+            <div class="detail-card">
+                <p class="detail-title">數據摘要</p>
                 <p class="detail-copy">
                     總爬升：${Math.round(run.elevationGain || 0)}m · 
                     最大坡度：${maxGrade} · 
@@ -230,9 +232,9 @@ export function renderRunDetailsContent(container, run, bundle) {
                     卡路里：${detail.calories ? Math.round(detail.calories) : "--"} kcal
                 </p>
             </div>
-            ${hrHtml}
-            ${weatherHtml}
-            ${intervalsHtml}
+
+            ${weatherHtml || ""}
+            ${intervalsHtml || ""}
             ${splitsHtml}
         </div>
         <div class="run-actions" style="margin-top: 1rem;">
@@ -240,6 +242,11 @@ export function renderRunDetailsContent(container, run, bundle) {
              <button class="btn btn-ghost btn-sm btn-download-md" data-id="${run.id}">匯出 MD</button>
         </div>
     `;
+
+    // Trigger chart rendering after a short delay to ensure canvas is ready
+    setTimeout(() => {
+        renderActivityDetailCharts(run.id, bundle, hrSummary);
+    }, 60);
 
     // Attach actions
     container.querySelector(".btn-download-json")?.addEventListener("click", () => {
@@ -249,3 +256,4 @@ export function renderRunDetailsContent(container, run, bundle) {
         window.dispatchEvent(new CustomEvent("stride:download-run-md", { detail: { runId: run.id } }));
     });
 }
+
