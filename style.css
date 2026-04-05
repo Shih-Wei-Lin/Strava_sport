@@ -252,12 +252,16 @@ textarea {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
+    position: relative;
+    z-index: 3;
 }
 
 .quick-nav {
     display: flex;
     flex-wrap: wrap;
     gap: 0.55rem;
+    position: relative;
+    z-index: 1;
 }
 
 .quick-link {
