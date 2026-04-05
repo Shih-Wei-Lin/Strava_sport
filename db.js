@@ -146,3 +146,27 @@ export async function loadCachedRuns() {
         return [];
     }
 }
+
+/**
+ * Save run activities into IndexedDB cache.
+ *
+ * Parameters:
+ * - activities (Array<object>): Activities to cache.
+ *
+ * Returns:
+ * - Promise<void>: Resolves when the activities are saved.
+ *
+ * Raises:
+ * - No explicit throw. Errors are swallowed with a console warning.
+ */
+export async function saveCachedRuns(activities) {
+    try {
+        await writeDbRecord(APP_DB_STORES.runs, {
+            key: "all_runs",
+            activities,
+            savedAt: new Date().toISOString()
+        });
+    } catch (error) {
+        console.warn("Failed to save cached runs to IndexedDB:", error);
+    }
+}
