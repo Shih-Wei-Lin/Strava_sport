@@ -215,6 +215,11 @@ export const DataController = {
             const prefix = athleteName ? `${athleteName}，` : "";
             setStatus(`${prefix}已載入 ${state.summary.runs.length} 筆活動。`, "success");
 
+            if ("vibrate" in navigator) {
+                // Double tap feel: 20ms vibrate, 10ms gap, 20ms vibrate
+                navigator.vibrate([20, 10, 20]);
+            }
+
             // Start background enrichment
             state.enrichmentRunId++;
             this.enrichPerformanceInsights(state.enrichmentRunId);
@@ -279,8 +284,16 @@ export const DataController = {
             }
 
             const { type, batch, completed, total } = e.data;
+            const progressBanner = document.getElementById("enrichment-progress-banner");
+            const progressBar = document.getElementById("enrichment-bar");
+            const progressPercent = document.getElementById("enrichment-percent");
 
             if (type === "progress") {
+                if (progressBanner) progressBanner.classList.remove("hidden");
+                const percent = Math.round((completed / total) * 100);
+                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (progressPercent) progressPercent.textContent = `${percent}%`;
+
                 batch.forEach(result => {
                     if (result.bests) {
                         Object.keys(result.bests).forEach(key => {
@@ -289,10 +302,10 @@ export const DataController = {
                     }
                 });
                 
-                setStatus(`正在分析區段表現 (${completed}/${total})...`, "info");
                 this.updatePredictionAndStats();
             } else if (type === "complete") {
                 setStatus("區段分析完成，預測已更新。", "success");
+                if (progressBanner) progressBanner.classList.add("hidden");
                 worker.terminate();
                 if (state.enrichmentWorker === worker) state.enrichmentWorker = null;
             }

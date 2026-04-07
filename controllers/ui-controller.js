@@ -11,6 +11,7 @@ import { renderPbGallery, renderPbSkeleton } from "../components/pb-gallery.js";
 export const UiController = {
     init() {
         this.bindEvents();
+        this.bindSwipeNavigation();
     },
 
     bindEvents() {
@@ -124,6 +125,10 @@ export const UiController = {
     },
 
     switchTab(tabId) {
+        if (state.dashboardTab !== tabId && ("vibrate" in navigator)) {
+            navigator.vibrate(10);
+        }
+
         state.dashboardTab = tabId;
         document.querySelectorAll(".dashboard-tab").forEach(btn => 
             btn.classList.toggle("is-active", btn.dataset.dashboardTab === tabId)
@@ -135,6 +140,48 @@ export const UiController = {
         if (tabId === "pbs" && state.summary) {
             renderPbGallery(state.summary);
         }
+    },
+
+    /**
+     * Bind horizontal swipe gestures for tab navigation on mobile.
+     */
+    bindSwipeNavigation() {
+        const dashboard = document.getElementById("dashboard");
+        if (!dashboard) return;
+
+        let startX = 0;
+        let startY = 0;
+        const THRESHOLD = 70; // min distance for swipe
+        const ANGLE_THRESHOLD = 30; // max Y-axis deviation
+
+        dashboard.addEventListener("touchstart", (e) => {
+            if (e.touches.length > 1) return;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        }, { passive: true });
+
+        dashboard.addEventListener("touchend", (e) => {
+            if (e.changedTouches.length !== 1) return;
+            
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const diffX = endX - startX;
+            const diffY = Math.abs(endY - startY);
+
+            // Ensure horizontal swipe and not just vertical scrolling
+            if (Math.abs(diffX) > THRESHOLD && diffY < ANGLE_THRESHOLD) {
+                const tabs = ["overview", "analysis", "pbs", "runs"];
+                const currentIdx = tabs.indexOf(state.dashboardTab);
+                
+                if (diffX > 0 && currentIdx > 0) {
+                    // Swipe Right -> Previous Tab
+                    this.switchTab(tabs[currentIdx - 1]);
+                } else if (diffX < 0 && currentIdx < tabs.length - 1) {
+                    // Swipe Left -> Next Tab
+                    this.switchTab(tabs[currentIdx + 1]);
+                }
+            }
+        }, { passive: true });
     },
 
     changeCalendarMonth(offset) {

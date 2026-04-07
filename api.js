@@ -2,6 +2,42 @@ import { loadCachedRuns, saveCachedRuns } from "./db.js";
 import { clearTokenStorage } from "./auth.js";
 import { setStatus } from "./ui-utils.js";
 
+const RUN_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
+
+/**
+ * Check if a Strava activity is a run-related activity.
+ * @param {object} activity - Strava activity object.
+ * @returns {boolean}
+ */
+function isRunActivity(activity) {
+    return RUN_TYPES.has(activity.type) || RUN_TYPES.has(activity.sport_type);
+}
+
+/**
+ * Perform a fetch with automatic retry on 429 (Too Many Requests).
+ * @param {string} url - Target URL.
+ * @param {object} options - Fetch options.
+ * @param {number} retries - Max retries.
+ * @returns {Promise<Response>}
+ */
+async function fetchWithRetry(url, options, retries = 3) {
+    let attempt = 0;
+    while (attempt <= retries) {
+        const response = await fetch(url, options);
+
+        if (response.status === 429 && attempt < retries) {
+            const retryAfter = response.headers.get("Retry-After");
+            const waitMs = (retryAfter ? parseInt(retryAfter, 10) : Math.pow(2, attempt) * 1000);
+            setStatus(`Strava API 頻率限制中，將在 ${Math.ceil(waitMs/1000)} 秒後重試...`, "info");
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+            attempt++;
+            continue;
+        }
+
+        return response;
+    }
+}
+
 /**
  * Fetch run activities from Strava with IndexedDB fallback cache.
  * @param {string} token - Valid Strava access token.
@@ -14,8 +50,8 @@ export async function fetchRunActivities(token) {
 
     try {
         let page = 1;
-        while (page <= 20) { // Safety cap at 2000 activities
-            const response = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
+        while (page <= 50) { // Increased safety cap to 5000 activities
+            const response = await fetchWithRetry(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             
@@ -40,7 +76,7 @@ export async function fetchRunActivities(token) {
             page += 1;
         }
 
-        const filteredRuns = activities.filter((activity) => activity.type === "Run" || activity.sport_type === "Run");
+        const filteredRuns = activities.filter(isRunActivity);
         await saveCachedRuns(filteredRuns);
         return filteredRuns;
     } catch (error) {
@@ -60,7 +96,7 @@ export async function fetchRunActivities(token) {
  */
 export async function fetchAthleteZones(token) {
     try {
-        const response = await fetch("https://www.strava.com/api/v3/athlete/zones", {
+        const response = await fetchWithRetry("https://www.strava.com/api/v3/athlete/zones", {
             headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -88,10 +124,10 @@ export async function fetchAthleteZones(token) {
  */
 export async function fetchRunDetailBundle(token, activityId) {
     const [detailResponse, streamsResponse] = await Promise.all([
-        fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
+        fetchWithRetry(`https://www.strava.com/api/v3/activities/${activityId}`, {
             headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`https://www.strava.com/api/v3/activities/${activityId}/streams?keys=time,distance,latlng,altitude,velocity_smooth,heartrate,cadence,temp&key_by_type=true`, {
+        fetchWithRetry(`https://www.strava.com/api/v3/activities/${activityId}/streams?keys=time,distance,latlng,altitude,velocity_smooth,heartrate,cadence,temp&key_by_type=true`, {
             headers: { Authorization: `Bearer ${token}` },
         }),
     ]);

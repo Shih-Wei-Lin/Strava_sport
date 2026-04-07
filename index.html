@@ -73,6 +73,16 @@
         </header>
 
         <section id="status-banner" class="status-banner hidden" aria-live="polite"></section>
+        
+        <div id="enrichment-progress-banner" class="status-banner status-info hidden">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.85rem; font-weight: 700;">
+                <span id="enrichment-text">正在分析區段表現...</span>
+                <span id="enrichment-percent">0%</span>
+            </div>
+            <div style="height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 999px; overflow: hidden;">
+                <div id="enrichment-bar" style="height: 100%; width: 0%; background: var(--teal); transition: width 300ms ease;"></div>
+            </div>
+        </div>
 
         <section id="setup-section" class="panel hidden">
             <div class="section-heading">

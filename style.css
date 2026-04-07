@@ -1409,6 +1409,70 @@ a:focus-visible {
     }
 }
 
+@media (max-width: 600px) {
+    .dashboard-tabs {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        border-top: 1px solid rgba(153, 174, 190, 0.22);
+        border-bottom: none;
+        padding: 0.5rem 0.75rem calc(0.5rem + var(--safe-bottom));
+        background: rgba(7, 19, 31, 0.94);
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.4rem;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .dashboard-tab {
+        padding: 0.6rem 0.25rem;
+        font-size: 0.82rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+
+    /* Add space at bottom of app shell so content isn't hidden by tab bar */
+    .app-shell {
+        padding-bottom: 5rem;
+    }
+
+    .hero {
+        padding: 1.5rem 1.25rem;
+        gap: 1rem;
+    }
+
+    .hero h1 {
+        font-size: 2.4rem;
+        letter-spacing: -0.04em;
+    }
+
+    .hero-text {
+        font-size: 0.92rem;
+        line-height: 1.6;
+        opacity: 0.9;
+    }
+
+    .quick-nav {
+        display: none; /* Hide quick nav as bottom tabs replace its function */
+    }
+
+    .stat-card {
+        min-height: 6.5rem;
+    }
+
+    .stat-value {
+        font-size: 1.45rem;
+    }
+
+    .calendar-day {
+        min-height: 40px; /* Ensure better tap target on mobile */
+    }
+}
+
 @media (max-width: 480px) {
     .update-toast {
         bottom: 1rem;

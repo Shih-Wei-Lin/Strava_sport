@@ -1,7 +1,10 @@
 import { APP_DB_NAME, APP_DB_VERSION, APP_DB_STORES } from "./state.js";
 
+let dbPromise = null;
+
 /**
  * Open the application IndexedDB database and create required object stores.
+ * Uses a singleton pattern to maintain a single open connection.
  *
  * Parameters:
  * - None.
@@ -13,12 +16,14 @@ import { APP_DB_NAME, APP_DB_VERSION, APP_DB_STORES } from "./state.js";
  * - Error: Raised when IndexedDB is unavailable or the open request fails.
  */
 export function openAppDb() {
+    if (dbPromise) return dbPromise;
+
     const idb = typeof indexedDB !== 'undefined' ? indexedDB : (typeof self !== 'undefined' ? self.indexedDB : null);
     if (!idb) {
         return Promise.reject(new Error("Browser does not support IndexedDB."));
     }
 
-    return new Promise((resolve, reject) => {
+    dbPromise = new Promise((resolve, reject) => {
         const request = idb.open(APP_DB_NAME, APP_DB_VERSION);
 
         request.onupgradeneeded = () => {
@@ -34,8 +39,13 @@ export function openAppDb() {
         };
 
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB."));
+        request.onerror = () => {
+            dbPromise = null; // Clear on failure so next attempt tries again
+            reject(request.error || new Error("Failed to open IndexedDB."));
+        };
     });
+
+    return dbPromise;
 }
 
 /**
@@ -61,7 +71,6 @@ export async function readDbRecord(storeName, key) {
 
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error || new Error(`Failed to read record from "${storeName}".`));
-        transaction.oncomplete = () => database.close();
         transaction.onabort = () => reject(transaction.error || new Error(`Read transaction aborted on "${storeName}".`));
     });
 }
@@ -89,7 +98,6 @@ export async function writeDbRecord(storeName, value) {
 
         request.onerror = () => reject(request.error || new Error(`Failed to write record to "${storeName}".`));
         transaction.oncomplete = () => {
-            database.close();
             resolve();
         };
         transaction.onabort = () => reject(transaction.error || new Error(`Write transaction aborted on "${storeName}".`));
@@ -117,7 +125,6 @@ export async function clearCachedDatabase() {
         transaction.objectStore(APP_DB_STORES.bundles).clear();
 
         transaction.oncomplete = () => {
-            database.close();
             resolve();
         };
         transaction.onabort = () => reject(transaction.error || new Error("Failed to clear cached database."));

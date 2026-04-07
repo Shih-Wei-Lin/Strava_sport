@@ -109,8 +109,9 @@ function sumDistance(runs) {
 }
 
 export function summariseActivities(activities, now = new Date()) {
+    const RUN_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
     const runs = (Array.isArray(activities) ? activities : [])
-        .filter((activity) => (activity.type === "Run" || activity.sport_type === "Run") && activity.distance > 0)
+        .filter((activity) => (RUN_TYPES.has(activity.type) || RUN_TYPES.has(activity.sport_type)) && activity.distance > 0)
         .map((activity) => normaliseActivity(activity))
         .sort((left, right) => (right.startedAt?.getTime() || 0) - (left.startedAt?.getTime() || 0));
 
