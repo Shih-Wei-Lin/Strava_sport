@@ -11,6 +11,7 @@ import { setStatus, clearStatus, getByIds, bindButtonActivation } from "../ui-ut
 
 // Component renders
 import { renderCalendar, syncHeatmapModeUi } from "../components/calendar.js";
+import { bindPullToRefreshGesture } from "../components/gestures.js";
 import { renderRuns } from "../components/runs-list.js";
 import { renderWeeklyChart } from "../components/charts.js";
 import { renderTopStats, renderInsight, renderPrediction } from "../components/dashboard.js";
@@ -87,82 +88,7 @@ export const DataController = {
     bindPullToRefresh() {
         const indicator = document.getElementById("pull-refresh-indicator");
         if (!indicator) return;
-
-        const THRESHOLD = 84;
-        let startY = 0;
-        let deltaY = 0;
-        let tracking = false;
-        let loading = false;
-
-        const resetIndicator = () => {
-            indicator.classList.remove("is-visible", "is-armed", "is-loading");
-            indicator.style.transform = "translate(-50%, -140%)";
-            indicator.textContent = "下拉即可重新整理";
-        };
-
-        window.addEventListener("touchstart", (event) => {
-            if (loading) return;
-            if (window.scrollY > 0) return;
-            const firstTouch = event.touches[0];
-            if (!firstTouch) return;
-            startY = firstTouch.clientY;
-            deltaY = 0;
-            tracking = true;
-        }, { passive: true });
-
-        window.addEventListener("touchmove", (event) => {
-            if (!tracking || loading) return;
-            const firstTouch = event.touches[0];
-            if (!firstTouch) return;
-
-            deltaY = Math.max(0, firstTouch.clientY - startY);
-            if (deltaY <= 8) {
-                resetIndicator();
-                return;
-            }
-
-            const progress = Math.min(deltaY, 120);
-            indicator.classList.add("is-visible");
-            indicator.style.transform = `translate(-50%, ${-140 + progress * 0.78}%)`;
-            if (deltaY >= THRESHOLD) {
-                indicator.classList.add("is-armed");
-                indicator.textContent = "放開即可重新整理";
-            } else {
-                indicator.classList.remove("is-armed");
-                indicator.textContent = "下拉即可重新整理";
-            }
-        }, { passive: true });
-
-        window.addEventListener("touchend", () => {
-            if (!tracking || loading) return;
-            tracking = false;
-
-            if (deltaY < THRESHOLD) {
-                resetIndicator();
-                return;
-            }
-
-            loading = true;
-            indicator.classList.add("is-visible", "is-loading");
-            indicator.classList.remove("is-armed");
-            indicator.style.transform = "translate(-50%, -10%)";
-            indicator.textContent = "重新整理中...";
-
-            Promise.resolve(this.loadDashboard())
-                .catch((error) => {
-                    console.error("Pull-to-refresh failed:", error);
-                })
-                .finally(() => {
-                    loading = false;
-                    resetIndicator();
-                });
-        }, { passive: true });
-
-        window.addEventListener("touchcancel", () => {
-            tracking = false;
-            deltaY = 0;
-            if (!loading) resetIndicator();
-        }, { passive: true });
+        bindPullToRefreshGesture(indicator, () => this.loadDashboard());
     },
 
     /**
@@ -284,15 +210,9 @@ export const DataController = {
             }
 
             const { type, batch, completed, total } = e.data;
-            const progressBanner = document.getElementById("enrichment-progress-banner");
-            const progressBar = document.getElementById("enrichment-bar");
-            const progressPercent = document.getElementById("enrichment-percent");
 
             if (type === "progress") {
-                if (progressBanner) progressBanner.classList.remove("hidden");
-                const percent = Math.round((completed / total) * 100);
-                if (progressBar) progressBar.style.width = `${percent}%`;
-                if (progressPercent) progressPercent.textContent = `${percent}%`;
+                this.uiController.updateEnrichmentProgress(completed, total);
 
                 batch.forEach(result => {
                     if (result.bests) {
@@ -305,7 +225,7 @@ export const DataController = {
                 this.updatePredictionAndStats();
             } else if (type === "complete") {
                 setStatus("區段分析完成，預測已更新。", "success");
-                if (progressBanner) progressBanner.classList.add("hidden");
+                this.uiController.hideEnrichmentProgress();
                 worker.terminate();
                 if (state.enrichmentWorker === worker) state.enrichmentWorker = null;
             }

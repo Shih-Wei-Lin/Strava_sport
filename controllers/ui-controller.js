@@ -7,6 +7,7 @@ import {
     renderPredictionSkeleton 
 } from "../components/dashboard.js";
 import { renderPbGallery, renderPbSkeleton } from "../components/pb-gallery.js";
+import { bindSwipeGesture } from "../components/gestures.js";
 
 export const UiController = {
     init() {
@@ -149,39 +150,20 @@ export const UiController = {
         const dashboard = document.getElementById("dashboard");
         if (!dashboard) return;
 
-        let startX = 0;
-        let startY = 0;
-        const THRESHOLD = 70; // min distance for swipe
-        const ANGLE_THRESHOLD = 30; // max Y-axis deviation
+        const tabs = ["overview", "analysis", "pbs", "runs"];
+        const getIdx = () => tabs.indexOf(state.dashboardTab);
 
-        dashboard.addEventListener("touchstart", (e) => {
-            if (e.touches.length > 1) return;
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-        }, { passive: true });
-
-        dashboard.addEventListener("touchend", (e) => {
-            if (e.changedTouches.length !== 1) return;
-            
-            const endX = e.changedTouches[0].clientX;
-            const endY = e.changedTouches[0].clientY;
-            const diffX = endX - startX;
-            const diffY = Math.abs(endY - startY);
-
-            // Ensure horizontal swipe and not just vertical scrolling
-            if (Math.abs(diffX) > THRESHOLD && diffY < ANGLE_THRESHOLD) {
-                const tabs = ["overview", "analysis", "pbs", "runs"];
-                const currentIdx = tabs.indexOf(state.dashboardTab);
-                
-                if (diffX > 0 && currentIdx > 0) {
-                    // Swipe Right -> Previous Tab
-                    this.switchTab(tabs[currentIdx - 1]);
-                } else if (diffX < 0 && currentIdx < tabs.length - 1) {
-                    // Swipe Left -> Next Tab
-                    this.switchTab(tabs[currentIdx + 1]);
-                }
+        bindSwipeGesture(
+            dashboard,
+            () => { // Swipe Left -> Next Tab
+                const idx = getIdx();
+                if (idx < tabs.length - 1) this.switchTab(tabs[idx + 1]);
+            },
+            () => { // Swipe Right -> Previous Tab
+                const idx = getIdx();
+                if (idx > 0) this.switchTab(tabs[idx - 1]);
             }
-        }, { passive: true });
+        );
     },
 
     changeCalendarMonth(offset) {
@@ -253,5 +235,21 @@ export const UiController = {
             state.weeklyChart.destroy();
             state.weeklyChart = null;
         }
+    },
+
+    updateEnrichmentProgress(completed, total) {
+        const progressBanner = document.getElementById("enrichment-progress-banner");
+        const progressBar = document.getElementById("enrichment-bar");
+        const progressPercent = document.getElementById("enrichment-percent");
+
+        if (progressBanner) progressBanner.classList.remove("hidden");
+        const percent = Math.round((completed / total) * 100);
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        if (progressPercent) progressPercent.textContent = `${percent}%`;
+    },
+
+    hideEnrichmentProgress() {
+        const progressBanner = document.getElementById("enrichment-progress-banner");
+        if (progressBanner) progressBanner.classList.add("hidden");
     }
 };
