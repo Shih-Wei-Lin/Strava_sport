@@ -2,14 +2,9 @@ import { state, STORAGE_KEYS, APP_DB_STORES } from "../state.js";
 import { ensureValidToken, getCredentials } from "../auth.js";
 import { fetchRunActivities, fetchAthleteZones, fetchRunDetailBundle } from "../api.js";
 import { readDbRecord, writeDbRecord } from "../db.js";
-import { 
-    summariseActivities, 
-    mergeBestEffort, 
-    buildAbilityPrediction 
-} from "../analytics.js";
+import { summariseActivities, mergeBestEffort, buildAbilityPrediction } from "../analytics.js";
 import { setStatus, clearStatus, getByIds, bindButtonActivation } from "../ui-utils.js";
 
-// Component renders
 import { renderCalendar, syncHeatmapModeUi } from "../components/calendar.js";
 import { bindPullToRefreshGesture } from "../components/gestures.js";
 import { renderRuns } from "../components/runs-list.js";
@@ -17,152 +12,103 @@ import { renderWeeklyChart } from "../components/charts.js";
 import { renderTopStats, renderInsight, renderPrediction } from "../components/dashboard.js";
 import { renderPbGallery } from "../components/pb-gallery.js";
 
+const TEXT = {
+    refreshLoading: "Refreshing...",
+    refreshIdle: "Refresh Data",
+    loadedSuccess: (name, count) => {
+        const prefix = name ? `${name}: ` : "";
+        return `${prefix}Loaded ${count} run activities.`;
+    },
+    enrichmentStart: (count) => `Enriching insights from ${count} recent runs...`,
+    enrichmentDone: "Insight enrichment complete.",
+    enrichmentError: "Insight enrichment failed. See console for details.",
+};
 
+const ENRICHMENT_LOOKBACK_MS = 180 * 24 * 60 * 60 * 1000;
+const ENRICHMENT_MAX_RUNS = 40;
+const PREDICTION_MAX_RECENT_RUNS = 16;
 
-/**
- * Determine whether an error likely indicates an authentication or authorization failure.
- *
- * Parameters:
- * - error {unknown}: The thrown error value from an async operation.
- *
- * Returns:
- * - {boolean}: `true` when the error message suggests token/authorization problems; otherwise `false`.
- *
- * Raises:
- * - None.
- */
 function isAuthFailureError(error) {
     const message = error instanceof Error ? error.message : String(error ?? "");
-    return /(token|授權|401|403)/i.test(message);
+    return /(token|auth|unauthorized|401|403)/i.test(message);
+}
+
+function getErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error ?? "Unknown error");
 }
 
 export const DataController = {
-    /**
-     * Initialize dependencies and register dashboard-related event listeners.
-     *
-     * Parameters:
-     * - authController {object}: Auth controller instance for auth-state transitions.
-     * - uiController {object}: UI controller instance for rendering helpers.
-     *
-     * Returns:
-     * - {void}: This function does not return a value.
-     *
-     * Raises:
-     * - None.
-     */
     init(authController, uiController) {
         this.authController = authController;
         this.uiController = uiController;
         this.bindEvents();
     },
 
-    /**
-     * Bind refresh interactions, including button activation and pull-to-refresh gesture.
-     *
-     * Parameters:
-     * - None.
-     *
-     * Returns:
-     * - {void}: This function does not return a value.
-     *
-     * Raises:
-     * - None.
-     */
     bindEvents() {
         bindButtonActivation(getByIds("refresh-data", "refresh-data-btn"), () => this.loadDashboard());
         this.bindPullToRefresh();
     },
 
-    /**
-     * Bind a lightweight pull-to-refresh gesture for touch devices when scrolled to page top.
-     *
-     * Parameters:
-     * - None.
-     *
-     * Returns:
-     * - {void}: This function does not return a value.
-     *
-     * Raises:
-     * - None.
-     */
     bindPullToRefresh() {
         const indicator = document.getElementById("pull-refresh-indicator");
         if (!indicator) return;
         bindPullToRefreshGesture(indicator, () => this.loadDashboard());
     },
 
-    /**
-     * Load dashboard data and render all dashboard components.
-     *
-     * Parameters:
-     * - None.
-     *
-     * Returns:
-     * - {Promise<void>}: Resolves after dashboard loading flow is completed.
-     *
-     * Raises:
-     * - None. Errors are handled internally and surfaced via UI status messages.
-     */
-    async loadDashboard() {
+    setRefreshButtonState(isLoading) {
         const refreshBtn = getByIds("refresh-data", "refresh-data-btn");
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.textContent = "正在載入數據...";
-        }
+        if (!refreshBtn) return;
+        refreshBtn.disabled = isLoading;
+        refreshBtn.textContent = isLoading ? TEXT.refreshLoading : TEXT.refreshIdle;
+    },
 
-        const token = await ensureValidToken();
-        if (!token) {
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.textContent = "重新整理資料";
-            }
-            const { clientId } = getCredentials();
-            if (!clientId) this.authController.showSetupState();
-            else this.authController.showAuthState();
-            return;
-        }
+    handleMissingToken() {
+        const { clientId } = getCredentials();
+        if (!clientId) this.authController.showSetupState();
+        else this.authController.showAuthState();
+    },
 
-        this.authController.showDashboardState();
-        clearStatus();
-        this.uiController.renderEmptyDashboard();
-        
+    handleDashboardLoadError(error) {
+        const message = getErrorMessage(error);
+        setStatus(`Failed to refresh dashboard: ${message}`, "error");
+        if (isAuthFailureError(error)) this.authController.showAuthState();
+        else this.authController.showDashboardState();
+    },
+
+    async loadDashboard() {
+        this.setRefreshButtonState(true);
         try {
+            const token = await ensureValidToken();
+            if (!token) {
+                this.handleMissingToken();
+                return;
+            }
+
+            this.authController.showDashboardState();
+            clearStatus();
+            this.uiController.renderEmptyDashboard();
+
             const [activities, athleteZones] = await Promise.all([
                 fetchRunActivities(token),
                 fetchAthleteZones(token),
             ]);
-            
+
             state.athleteZones = athleteZones;
             state.summary = summariseActivities(activities, new Date());
-            
             this.renderAppLayout(state.summary);
 
             const athleteName = localStorage.getItem(STORAGE_KEYS.athleteName);
-            const prefix = athleteName ? `${athleteName}，` : "";
-            setStatus(`${prefix}已載入 ${state.summary.runs.length} 筆活動。`, "success");
+            setStatus(TEXT.loadedSuccess(athleteName, state.summary.runs.length), "success");
 
-            if ("vibrate" in navigator) {
-                // Double tap feel: 20ms vibrate, 10ms gap, 20ms vibrate
-                navigator.vibrate([20, 10, 20]);
-            }
+            if ("vibrate" in navigator) navigator.vibrate([20, 10, 20]);
 
-            // Start background enrichment
-            state.enrichmentRunId++;
+            state.enrichmentRunId += 1;
             this.enrichPerformanceInsights(state.enrichmentRunId);
-        } catch (err) {
-            console.error(err);
-            if (isAuthFailureError(err)) {
-                this.authController.showAuthState();
-                setStatus(`資料載入失敗：${err.message}`, "error");
-            } else {
-                setStatus(`資料載入失敗：${err.message}`, "error");
-                this.authController.showDashboardState();
-            }
+        } catch (error) {
+            console.error("Dashboard load failed:", error);
+            this.handleDashboardLoadError(error);
         } finally {
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.textContent = "重新整理資料";
-            }
+            this.setRefreshButtonState(false);
         }
     },
 
@@ -178,67 +124,72 @@ export const DataController = {
         syncHeatmapModeUi();
     },
 
+    stopActiveEnrichmentWorker() {
+        if (!state.enrichmentWorker) return;
+        state.enrichmentWorker.terminate();
+        state.enrichmentWorker = null;
+    },
+
+    getRecentRunsForEnrichment(summary) {
+        const cutoff = new Date(Date.now() - ENRICHMENT_LOOKBACK_MS);
+        return summary.runs
+            .filter((run) => run.distanceKm >= 1 && run.startedAt >= cutoff)
+            .slice(0, ENRICHMENT_MAX_RUNS);
+    },
+
+    applyEnrichmentBatch(batch) {
+        for (const result of batch) {
+            if (!result?.bests) continue;
+            for (const key of Object.keys(result.bests)) {
+                state.summary.bests[key] = mergeBestEffort(state.summary.bests[key], result.bests[key]);
+            }
+        }
+        this.updatePredictionAndStats();
+    },
+
     async enrichPerformanceInsights(id) {
         if (!state.summary) return;
-        
+
         const token = await ensureValidToken();
         if (!token) return;
 
-        // Recently 40 runs within 180 days
-        const recent = state.summary.runs
-            .filter(r => r.distanceKm >= 1 && r.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
-            .slice(0, 40);
+        const recentRuns = this.getRecentRunsForEnrichment(state.summary);
+        if (recentRuns.length === 0) return;
 
-        if (recent.length === 0) return;
+        this.stopActiveEnrichmentWorker();
+        setStatus(TEXT.enrichmentStart(recentRuns.length), "info");
 
-        // Terminate existing worker if any
-        if (state.enrichmentWorker) {
-            state.enrichmentWorker.terminate();
-            state.enrichmentWorker = null;
-        }
-
-        setStatus(`正在深度分析最近 ${recent.length} 筆活動的區段表現...`, "info");
-
-        const worker = new Worker('./workers/enrichment.js', { type: 'module' });
+        const worker = new Worker("./workers/enrichment.js", { type: "module" });
         state.enrichmentWorker = worker;
 
-        worker.onmessage = (e) => {
-            if (id !== state.enrichmentRunId) {
+        worker.onmessage = (event) => {
+            if (id !== state.enrichmentRunId || state.enrichmentWorker !== worker) {
                 worker.terminate();
-                if (state.enrichmentWorker === worker) state.enrichmentWorker = null;
                 return;
             }
 
-            const { type, batch, completed, total } = e.data;
-
+            const { type, batch, completed, total } = event.data;
             if (type === "progress") {
                 this.uiController.updateEnrichmentProgress(completed, total);
+                this.applyEnrichmentBatch(batch);
+                return;
+            }
 
-                batch.forEach(result => {
-                    if (result.bests) {
-                        Object.keys(result.bests).forEach(key => {
-                            state.summary.bests[key] = mergeBestEffort(state.summary.bests[key], result.bests[key]);
-                        });
-                    }
-                });
-                
-                this.updatePredictionAndStats();
-            } else if (type === "complete") {
-                setStatus("區段分析完成，預測已更新。", "success");
+            if (type === "complete") {
+                setStatus(TEXT.enrichmentDone, "success");
                 this.uiController.hideEnrichmentProgress();
-                worker.terminate();
-                if (state.enrichmentWorker === worker) state.enrichmentWorker = null;
+                this.stopActiveEnrichmentWorker();
             }
         };
 
-        worker.onerror = (err) => {
-            console.error("Enrichment worker error:", err);
-            setStatus("區段分析過程中發生錯誤。", "error");
-            worker.terminate();
-            if (state.enrichmentWorker === worker) state.enrichmentWorker = null;
+        worker.onerror = (error) => {
+            console.error("Enrichment worker error:", error);
+            setStatus(TEXT.enrichmentError, "error");
+            this.uiController.hideEnrichmentProgress();
+            this.stopActiveEnrichmentWorker();
         };
 
-        worker.postMessage({ recent, token });
+        worker.postMessage({ recent: recentRuns, token });
     },
 
     async loadRunDetailBundleWithCache(runId) {
@@ -246,12 +197,15 @@ export const DataController = {
         if (cached) return cached.bundle;
 
         const token = await ensureValidToken();
+        if (!token) {
+            throw new Error("Cannot load run detail bundle without a valid token.");
+        }
+
         const bundle = await fetchRunDetailBundle(token, runId);
-        
         await writeDbRecord(APP_DB_STORES.bundles, {
             runId,
             savedAt: new Date().toISOString(),
-            bundle
+            bundle,
         });
         return bundle;
     },
@@ -264,10 +218,11 @@ export const DataController = {
     },
 
     buildAbilityPredictionFromSummary(summary) {
+        const cutoff = new Date(Date.now() - ENRICHMENT_LOOKBACK_MS);
         const recent = summary.runs
-            .filter(r => r.startedAt >= new Date(Date.now() - 180 * 24 * 60 * 60 * 1000))
-            .filter(r => r.distanceKm >= 3 && r.distanceKm <= 21.1)
-            .slice(0, 16);
+            .filter((run) => run.startedAt >= cutoff)
+            .filter((run) => run.distanceKm >= 3 && run.distanceKm <= 21.1)
+            .slice(0, PREDICTION_MAX_RECENT_RUNS);
 
         return buildAbilityPrediction([
             summary.bests.segment5k,
@@ -276,7 +231,7 @@ export const DataController = {
             summary.bests.fullRun3k,
             summary.bests.fullRun5k,
             summary.bests.fullRun10k,
-            ...recent
+            ...recent,
         ]);
-    }
+    },
 };

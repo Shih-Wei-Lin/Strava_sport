@@ -1,127 +1,158 @@
-/**
- * Bind horizontal swipe gestures for tab navigation on mobile.
- * 
- * @param {HTMLElement} element - The DOM element to attach touch listeners to.
- * @param {Function} onSwipeLeft - Callback triggered when user swipes left (Next Tab).
- * @param {Function} onSwipeRight - Callback triggered when user swipes right (Previous Tab).
- */
+const SWIPE_DISTANCE_THRESHOLD = 70;
+const SWIPE_VERTICAL_TOLERANCE = 30;
+
+const PULL_THRESHOLD = 84;
+const PULL_VISUAL_LIMIT = 120;
+const PULL_PROGRESS_OFFSET = -140;
+const PULL_PROGRESS_MULTIPLIER = 0.78;
+const PULL_MIN_VISUAL_DELTA = 8;
+
+const PULL_TEXT = {
+    idle: "Pull down to refresh",
+    armed: "Release to refresh",
+    loading: "Refreshing...",
+};
+
 export function bindSwipeGesture(element, onSwipeLeft, onSwipeRight) {
     if (!element) return;
 
     let startX = 0;
     let startY = 0;
-    const THRESHOLD = 70; // min distance for swipe
-    const ANGLE_THRESHOLD = 30; // max Y-axis deviation
 
-    element.addEventListener("touchstart", function (e) {
-        if (e.touches.length > 1) return;
-        startX = e.touches[0].clientX;
-        startY = e.touches[0].clientY;
-    }, { passive: true });
+    element.addEventListener(
+        "touchstart",
+        (event) => {
+            if (event.touches.length !== 1) return;
+            startX = event.touches[0].clientX;
+            startY = event.touches[0].clientY;
+        },
+        { passive: true }
+    );
 
-    element.addEventListener("touchend", function (e) {
-        if (e.changedTouches.length !== 1) return;
-        
-        const endX = e.changedTouches[0].clientX;
-        const endY = e.changedTouches[0].clientY;
-        const diffX = endX - startX;
-        const diffY = Math.abs(endY - startY);
+    element.addEventListener(
+        "touchend",
+        (event) => {
+            if (event.changedTouches.length !== 1) return;
 
-        // Ensure horizontal swipe and not just vertical scrolling
-        if (Math.abs(diffX) > THRESHOLD && diffY < ANGLE_THRESHOLD) {
-            if (diffX > 0) {
-                // Swipe Right -> Previous
-                if (onSwipeRight) onSwipeRight();
-            } else if (diffX < 0) {
-                // Swipe Left -> Next
-                if (onSwipeLeft) onSwipeLeft();
-            }
-        }
-    }, { passive: true });
+            const endX = event.changedTouches[0].clientX;
+            const endY = event.changedTouches[0].clientY;
+            const deltaX = endX - startX;
+            const deltaY = Math.abs(endY - startY);
+
+            const isHorizontalSwipe =
+                Math.abs(deltaX) > SWIPE_DISTANCE_THRESHOLD && deltaY < SWIPE_VERTICAL_TOLERANCE;
+            if (!isHorizontalSwipe) return;
+
+            if (deltaX > 0 && onSwipeRight) onSwipeRight();
+            if (deltaX < 0 && onSwipeLeft) onSwipeLeft();
+        },
+        { passive: true }
+    );
 }
 
-/**
- * Bind a lightweight pull-to-refresh gesture for touch devices when scrolled to page top.
- * 
- * @param {HTMLElement} indicator - The DOM element acting as the refresh visual indicator.
- * @param {Function} onRefresh - Async callback returning a Promise triggered to perform the refresh.
- */
 export function bindPullToRefreshGesture(indicator, onRefresh) {
     if (!indicator) return;
+    if (typeof onRefresh !== "function") {
+        throw new Error("bindPullToRefreshGesture requires an onRefresh callback function.");
+    }
 
-    const THRESHOLD = 84;
     let startY = 0;
     let deltaY = 0;
     let tracking = false;
     let loading = false;
 
-    function resetIndicator() {
+    const resetIndicator = () => {
         indicator.classList.remove("is-visible", "is-armed", "is-loading");
         indicator.style.transform = "translate(-50%, -140%)";
-        indicator.textContent = "下拉即可重新整理";
-    }
+        indicator.textContent = PULL_TEXT.idle;
+    };
 
-    window.addEventListener("touchstart", function (event) {
-        if (loading || window.scrollY > 0) return;
-        const firstTouch = event.touches[0];
-        if (!firstTouch) return;
-        startY = firstTouch.clientY;
-        deltaY = 0;
-        tracking = true;
-    }, { passive: true });
-
-    window.addEventListener("touchmove", function (event) {
-        if (!tracking || loading) return;
-        const firstTouch = event.touches[0];
-        if (!firstTouch) return;
-
-        deltaY = Math.max(0, firstTouch.clientY - startY);
-        if (deltaY <= 8) {
+    const updateIndicatorProgress = (pullDistance) => {
+        if (pullDistance <= PULL_MIN_VISUAL_DELTA) {
             resetIndicator();
             return;
         }
 
-        const progress = Math.min(deltaY, 120);
+        const progress = Math.min(pullDistance, PULL_VISUAL_LIMIT);
+        const translateY = PULL_PROGRESS_OFFSET + progress * PULL_PROGRESS_MULTIPLIER;
+
         indicator.classList.add("is-visible");
-        indicator.style.transform = `translate(-50%, ${-140 + progress * 0.78}%)`;
-        
-        if (deltaY >= THRESHOLD) {
+        indicator.style.transform = `translate(-50%, ${translateY}%)`;
+
+        if (pullDistance >= PULL_THRESHOLD) {
             indicator.classList.add("is-armed");
-            indicator.textContent = "放開即可重新整理";
-        } else {
-            indicator.classList.remove("is-armed");
-            indicator.textContent = "下拉即可重新整理";
-        }
-    }, { passive: true });
-
-    window.addEventListener("touchend", function () {
-        if (!tracking || loading) return;
-        tracking = false;
-
-        if (deltaY < THRESHOLD) {
-            resetIndicator();
+            indicator.textContent = PULL_TEXT.armed;
             return;
         }
 
-        loading = true;
-        indicator.classList.add("is-visible", "is-loading");
         indicator.classList.remove("is-armed");
-        indicator.style.transform = "translate(-50%, -10%)";
-        indicator.textContent = "重新整理中...";
+        indicator.textContent = PULL_TEXT.idle;
+    };
 
-        Promise.resolve(onRefresh())
-            .catch(function (error) {
-                console.error("Pull-to-refresh failed:", error);
-            })
-            .finally(function () {
-                loading = false;
+    window.addEventListener(
+        "touchstart",
+        (event) => {
+            if (loading || window.scrollY > 0) return;
+            const firstTouch = event.touches[0];
+            if (!firstTouch) return;
+
+            startY = firstTouch.clientY;
+            deltaY = 0;
+            tracking = true;
+        },
+        { passive: true }
+    );
+
+    window.addEventListener(
+        "touchmove",
+        (event) => {
+            if (!tracking || loading) return;
+            const firstTouch = event.touches[0];
+            if (!firstTouch) return;
+
+            deltaY = Math.max(0, firstTouch.clientY - startY);
+            updateIndicatorProgress(deltaY);
+        },
+        { passive: true }
+    );
+
+    window.addEventListener(
+        "touchend",
+        () => {
+            if (!tracking || loading) return;
+            tracking = false;
+
+            if (deltaY < PULL_THRESHOLD) {
                 resetIndicator();
-            });
-    }, { passive: true });
+                return;
+            }
 
-    window.addEventListener("touchcancel", function () {
-        tracking = false;
-        deltaY = 0;
-        if (!loading) resetIndicator();
-    }, { passive: true });
+            loading = true;
+            indicator.classList.add("is-visible", "is-loading");
+            indicator.classList.remove("is-armed");
+            indicator.style.transform = "translate(-50%, -10%)";
+            indicator.textContent = PULL_TEXT.loading;
+
+            Promise.resolve(onRefresh())
+                .catch((error) => {
+                    console.error("Pull-to-refresh failed:", error);
+                })
+                .finally(() => {
+                    loading = false;
+                    deltaY = 0;
+                    resetIndicator();
+                });
+        },
+        { passive: true }
+    );
+
+    window.addEventListener(
+        "touchcancel",
+        () => {
+            tracking = false;
+            deltaY = 0;
+            if (!loading) resetIndicator();
+        },
+        { passive: true }
+    );
 }
