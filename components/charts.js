@@ -125,6 +125,12 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
             return 1000 / (speed * 60); // min/km
         });
 
+        const validPaces = dsPace.filter(p => p !== null && p < 45); // Ignore anomalies > 45 min/km
+        const maxPaceVal = validPaces.length ? Math.max(...validPaces) : 12;
+        const minPaceVal = validPaces.length ? Math.min(...validPaces) : 3;
+        const yPaceMax = Math.min(35, Math.ceil(maxPaceVal) + 1);
+        const yPaceMin = Math.max(1, Math.floor(minPaceVal) - 1);
+
         // 1. Performance Chart (Pace Left, HR Right)
         if (perfCanvas) {
             new window.Chart(perfCanvas, {
@@ -167,8 +173,8 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                             type: "linear",
                             position: "left",
                             reverse: true,
-                            min: 3,
-                            max: 12,
+                            min: yPaceMin,
+                            max: yPaceMax,
                             title: { display: true, text: "配速", color: "#5eead4", font: { size: 10 } },
                             grid: { color: "rgba(255, 255, 255, 0.05)" },
                             ticks: { color: "#5eead4", font: { size: 9 } }
@@ -297,7 +303,7 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                             data: dsPace,
                             borderColor: "#5eead4",
                             backgroundColor: "transparent",
-                            borderWidth: 2,
+                            borderWidth: 1,
                             pointRadius: 0,
                             tension: 0.3,
                             yAxisID: "y-pace",
@@ -317,8 +323,8 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                             type: "linear",
                             position: "left",
                             reverse: true,
-                            min: 3,
-                            max: 12,
+                            min: yPaceMin,
+                            max: yPaceMax,
                             title: { display: true, text: "配速", color: "#5eead4", font: { size: 10 } },
                             grid: { color: "rgba(255, 255, 255, 0.05)" },
                             ticks: { color: "#5eead4", font: { size: 9 } }
