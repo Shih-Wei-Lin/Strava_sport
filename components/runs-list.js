@@ -223,6 +223,20 @@ export function renderRunDetailsContent(container, run, bundle) {
             </div>
 
             <div class="detail-card full-width">
+                <p class="detail-title">心率與海拔圖 (左軸：心率 / 右軸：海拔)</p>
+                <div class="chart-container" style="height: 200px;">
+                    <canvas id="run-hr-elev-chart-${run.id}"></canvas>
+                </div>
+            </div>
+
+            <div class="detail-card full-width">
+                <p class="detail-title">配速與海拔圖 (左軸：配速 / 右軸：海拔)</p>
+                <div class="chart-container" style="height: 200px;">
+                    <canvas id="run-pace-elev-chart-${run.id}"></canvas>
+                </div>
+            </div>
+
+            <div class="detail-card full-width">
                 <p class="detail-title">海拔高度 (左軸：高度趨勢)</p>
                 <div class="chart-container" style="height: 180px;">
                     <canvas id="run-elev-chart-${run.id}"></canvas>

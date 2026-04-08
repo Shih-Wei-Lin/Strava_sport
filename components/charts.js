@@ -101,6 +101,8 @@ function formatTimeLabel(seconds) {
 export function renderActivityDetailCharts(runId, bundle, hrSummary) {
     const perfCanvas = document.getElementById(`run-perf-chart-${runId}`);
     const elevCanvas = document.getElementById(`run-elev-chart-${runId}`);
+    const hrElevCanvas = document.getElementById(`run-hr-elev-chart-${runId}`);
+    const paceElevCanvas = document.getElementById(`run-pace-elev-chart-${runId}`);
     const hrZonesCanvas = document.getElementById(`hr-zones-chart-${runId}`);
     const { streams } = bundle;
 
@@ -135,7 +137,7 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                             data: dsPace,
                             borderColor: "#5eead4",
                             backgroundColor: "transparent",
-                            borderWidth: 2,
+                            borderWidth: 1,
                             pointRadius: 0,
                             tension: 0.3,
                             yAxisID: "y-pace",
@@ -145,7 +147,7 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                             data: dsHr,
                             borderColor: "#fb7185",
                             backgroundColor: "transparent",
-                            borderWidth: 2,
+                            borderWidth: 1,
                             pointRadius: 0,
                             tension: 0.3,
                             yAxisID: "y-hr",
@@ -209,6 +211,125 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     scales: {
                         x: { grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
                         y: { title: { display: true, text: "高度 (m)", color: "#99aebe", font: { size: 10 } }, grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#99aebe", font: { size: 9 } } }
+                    }
+                }
+            });
+        }
+
+        // 3. HR + Elevation Chart
+        if (hrElevCanvas) {
+            new window.Chart(hrElevCanvas, {
+                type: "line",
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: "海拔高度 (m)",
+                            data: dsAlt,
+                            borderColor: "transparent",
+                            backgroundColor: "rgba(148, 163, 184, 0.2)",
+                            borderWidth: 0,
+                            fill: true,
+                            pointRadius: 0,
+                            tension: 0.2,
+                            yAxisID: "y-elev",
+                        },
+                        {
+                            label: "心率 (bpm)",
+                            data: dsHr,
+                            borderColor: "#fb7185",
+                            backgroundColor: "transparent",
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.3,
+                            yAxisID: "y-hr",
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
+                    plugins: {
+                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } }
+                    },
+                    scales: {
+                        x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
+                        "y-hr": {
+                            type: "linear",
+                            position: "left",
+                            title: { display: true, text: "心率", color: "#fb7185", font: { size: 10 } },
+                            grid: { color: "rgba(255, 255, 255, 0.05)" },
+                            ticks: { color: "#fb7185", font: { size: 9 } }
+                        },
+                        "y-elev": {
+                            type: "linear",
+                            position: "right",
+                            title: { display: true, text: "高度 (m)", color: "#94a3b8", font: { size: 10 } },
+                            grid: { display: false },
+                            ticks: { color: "#94a3b8", font: { size: 9 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 4. Pace + Elevation Chart
+        if (paceElevCanvas) {
+            new window.Chart(paceElevCanvas, {
+                type: "line",
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: "海拔高度 (m)",
+                            data: dsAlt,
+                            borderColor: "transparent",
+                            backgroundColor: "rgba(148, 163, 184, 0.2)",
+                            borderWidth: 0,
+                            fill: true,
+                            pointRadius: 0,
+                            tension: 0.2,
+                            yAxisID: "y-elev",
+                        },
+                        {
+                            label: "配速 (min/km)",
+                            data: dsPace,
+                            borderColor: "#5eead4",
+                            backgroundColor: "transparent",
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.3,
+                            yAxisID: "y-pace",
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
+                    plugins: {
+                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } }
+                    },
+                    scales: {
+                        x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
+                        "y-pace": {
+                            type: "linear",
+                            position: "left",
+                            reverse: true,
+                            min: 3,
+                            max: 12,
+                            title: { display: true, text: "配速", color: "#5eead4", font: { size: 10 } },
+                            grid: { color: "rgba(255, 255, 255, 0.05)" },
+                            ticks: { color: "#5eead4", font: { size: 9 } }
+                        },
+                        "y-elev": {
+                            type: "linear",
+                            position: "right",
+                            title: { display: true, text: "高度 (m)", color: "#94a3b8", font: { size: 10 } },
+                            grid: { display: false },
+                            ticks: { color: "#94a3b8", font: { size: 9 } }
+                        }
                     }
                 }
             });
