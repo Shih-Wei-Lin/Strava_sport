@@ -1699,6 +1699,10 @@ a:focus-visible {
     background: rgba(9, 22, 34, 0.75);
 }
 
+.run-map .leaflet-tile {
+    filter: saturate(0.72) contrast(1.04) brightness(0.98);
+}
+
 .run-map .leaflet-control-attribution {
     font-size: 0.66rem;
     background: rgba(4, 11, 18, 0.62);
@@ -1713,7 +1717,7 @@ a:focus-visible {
 .hr-zone-track {
     display: flex;
     width: 100%;
-    min-height: 2.2rem;
+    min-height: 0.85rem;
     overflow: hidden;
     border-radius: 999px;
     border: 1px solid rgba(153, 174, 190, 0.18);
@@ -1724,42 +1728,42 @@ a:focus-visible {
     width: var(--zone-width, 10%);
     min-width: 0;
     background: var(--zone-color, rgba(94, 234, 212, 0.8));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(2, 12, 18, 0.9);
-    font-size: 0.72rem;
-    font-weight: 800;
-}
-
-.hr-zone-segment span {
-    white-space: nowrap;
+    height: 0.85rem;
 }
 
 .hr-zones-legend {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.45rem 0.65rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     margin-top: 0.5rem;
 }
 
 .hr-zone-legend-item {
-    display: grid;
-    grid-template-columns: auto 1fr auto auto;
+    display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    font-size: 0.82rem;
+    gap: 0.42rem;
+    padding: 0.34rem 0.58rem;
+    border-radius: 999px;
+    border: 1px solid rgba(153, 174, 190, 0.14);
+    background: rgba(7, 19, 31, 0.68);
+    font-size: 0.76rem;
     color: var(--text-soft);
+    line-height: 1;
 }
 
 .hr-zone-legend-item strong {
     color: var(--text);
-    font-size: 0.84rem;
+    font-size: 0.78rem;
+}
+
+.hr-zone-legend-label {
+    color: var(--text);
+    font-weight: 700;
 }
 
 .hr-zone-dot {
-    width: 0.7rem;
-    height: 0.7rem;
+    width: 0.52rem;
+    height: 0.52rem;
     border-radius: 999px;
     background: var(--zone-color, rgba(94, 234, 212, 0.8));
     box-shadow: 0 0 0 2px rgba(4, 11, 18, 0.44);
@@ -1797,7 +1801,7 @@ a:focus-visible {
     }
 
     .hr-zones-legend {
-        grid-template-columns: 1fr;
+        gap: 0.42rem;
     }
 
     .run-map {

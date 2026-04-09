@@ -260,16 +260,14 @@ function renderHeartRateZoneBar(runId, hrSummary) {
         const sharePercent = Number((zone.share * 100).toFixed(1));
         const width = Math.max(zone.share * 100, 1.8);
         return `
-            <div class="hr-zone-segment" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]}; --zone-width:${width}%;" title="${zone.label} ${sharePercent}% (${formatZoneDuration(zone.seconds)})">
-                <span>${zone.label}</span>
-            </div>
+            <div class="hr-zone-segment" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]}; --zone-width:${width}%;" title="${zone.label} ${sharePercent}% (${formatZoneDuration(zone.seconds)})"></div>
         `;
     }).join("");
 
     const legends = hrSummary.zones.map((zone, index) => `
         <div class="hr-zone-legend-item">
             <span class="hr-zone-dot" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]};"></span>
-            <span>${zone.label}</span>
+            <span class="hr-zone-legend-label">${zone.label}</span>
             <strong>${(zone.share * 100).toFixed(1)}%</strong>
             <span>${formatZoneDuration(zone.seconds)}</span>
         </div>
@@ -296,6 +294,48 @@ function getLatLngPoints(streams) {
         .map(([lat, lng]) => [lat, lng]);
 }
 
+const DETAIL_CHART_AXIS_WIDTH = {
+    left: 52,
+    right: 52,
+};
+
+function lockAxisWidth(width) {
+    return {
+        afterFit(scale) {
+            scale.width = width;
+        },
+    };
+}
+
+function buildDetailChartPlugins() {
+    return {
+        legend: {
+            display: true,
+            position: "top",
+            labels: { color: "#99aebe", font: { size: 10 } },
+        },
+        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
+    };
+}
+
+function buildDetailXAxis() {
+    return {
+        display: true,
+        grid: { display: false },
+        ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } },
+    };
+}
+
+function buildDetailAxisTitle(text, color) {
+    return {
+        display: true,
+        text,
+        color,
+        font: { size: 10 },
+        padding: { top: 0, bottom: 6 },
+    };
+}
+
 function renderRunRouteMap(runId, bundle) {
     const container = document.getElementById(`run-map-${runId}`);
     if (!container) return null;
@@ -320,15 +360,22 @@ function renderRunRouteMap(runId, bundle) {
         tap: false,
     });
 
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors",
+    window.L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+        subdomains: "abcd",
+        maxZoom: 20,
+        attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+    }).addTo(map);
+
+    const routeOutline = window.L.polyline(points, {
+        color: "rgba(8, 15, 23, 0.72)",
+        weight: 8,
+        opacity: 0.9,
     }).addTo(map);
 
     const track = window.L.polyline(points, {
         color: "#5eead4",
-        weight: 4,
-        opacity: 0.9,
+        weight: 4.5,
+        opacity: 0.96,
     }).addTo(map);
 
     window.L.circleMarker(points[0], {
@@ -347,7 +394,7 @@ function renderRunRouteMap(runId, bundle) {
         weight: 2,
     }).addTo(map);
 
-    map.fitBounds(track.getBounds(), { padding: [24, 24] });
+    map.fitBounds(routeOutline.getBounds(), { padding: [24, 24] });
 
     setTimeout(() => {
         try {
@@ -457,28 +504,30 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
+                    layout: { padding: { left: 4, right: 4 } },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
-                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
+                        ...buildDetailChartPlugins(),
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
+                        x: buildDetailXAxis(),
                         "y-pace": {
                             type: "linear",
                             position: "left",
                             reverse: true,
                             min: yPaceMin,
                             max: yPaceMax,
-                            title: { display: true, text: "配速", color: "#5eead4", font: { size: 10 } },
+                            title: buildDetailAxisTitle("配速", "#5eead4"),
                             grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#5eead4", font: { size: 9 } }
+                            ticks: { color: "#5eead4", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
                         },
                         "y-hr": {
                             type: "linear",
                             position: "right",
-                            title: { display: true, text: "心率", color: "#fb7185", font: { size: 10 } },
+                            title: buildDetailAxisTitle("心率", "#fb7185"),
                             grid: { display: false },
-                            ticks: { color: "#fb7185", font: { size: 9 } }
+                            ticks: { color: "#fb7185", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
                         }
                     }
                 }
@@ -506,13 +555,29 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
+                    layout: { padding: { left: 4, right: 4 } },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
-                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
+                        ...buildDetailChartPlugins(),
                     },
                     scales: {
-                        x: { grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
-                        y: { title: { display: true, text: "高度 (m)", color: "#99aebe", font: { size: 10 } }, grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#99aebe", font: { size: 9 } } }
+                        x: buildDetailXAxis(),
+                        y: {
+                            title: buildDetailAxisTitle("海拔", "#99aebe"),
+                            grid: { color: "rgba(255, 255, 255, 0.05)" },
+                            ticks: { color: "#99aebe", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
+                        },
+                        "y-spacer": {
+                            type: "linear",
+                            position: "right",
+                            display: false,
+                            min: 0,
+                            max: 1,
+                            grid: { display: false, drawOnChartArea: false, drawTicks: false },
+                            ticks: { display: false },
+                            border: { display: false },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
+                        },
                     }
                 }
             }));
@@ -552,25 +617,27 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
+                    layout: { padding: { left: 4, right: 4 } },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
-                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
+                        ...buildDetailChartPlugins(),
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
+                        x: buildDetailXAxis(),
                         "y-hr": {
                             type: "linear",
                             position: "left",
-                            title: { display: true, text: "心率", color: "#fb7185", font: { size: 10 } },
+                            title: buildDetailAxisTitle("心率", "#fb7185"),
                             grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#fb7185", font: { size: 9 } }
+                            ticks: { color: "#fb7185", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
                         },
                         "y-elev": {
                             type: "linear",
                             position: "right",
-                            title: { display: true, text: "高度 (m)", color: "#94a3b8", font: { size: 10 } },
+                            title: buildDetailAxisTitle("海拔", "#94a3b8"),
                             grid: { display: false },
-                            ticks: { color: "#94a3b8", font: { size: 9 } }
+                            ticks: { color: "#94a3b8", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
                         }
                     }
                 }
@@ -611,28 +678,30 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
+                    layout: { padding: { left: 4, right: 4 } },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
-                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
+                        ...buildDetailChartPlugins(),
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
+                        x: buildDetailXAxis(),
                         "y-pace": {
                             type: "linear",
                             position: "left",
                             reverse: true,
                             min: yPaceMin,
                             max: yPaceMax,
-                            title: { display: true, text: "配速", color: "#5eead4", font: { size: 10 } },
+                            title: buildDetailAxisTitle("配速", "#5eead4"),
                             grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#5eead4", font: { size: 9 } }
+                            ticks: { color: "#5eead4", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
                         },
                         "y-elev": {
                             type: "linear",
                             position: "right",
-                            title: { display: true, text: "高度 (m)", color: "#94a3b8", font: { size: 10 } },
+                            title: buildDetailAxisTitle("海拔", "#94a3b8"),
                             grid: { display: false },
-                            ticks: { color: "#94a3b8", font: { size: 9 } }
+                            ticks: { color: "#94a3b8", font: { size: 9 }, padding: 6 },
+                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
                         }
                     }
                 }

@@ -234,14 +234,14 @@ export function renderRunDetailsContent(container, run, bundle) {
                     </div>
 
                     <div class="detail-card full-width">
-                        <p class="detail-title">性能趨勢 (左軸：配速 / 右軸：心率)</p>
+                        <p class="detail-title">性能趨勢</p>
                         <div class="chart-container" style="height: 200px;">
                             <canvas id="run-perf-chart-${run.id}"></canvas>
                         </div>
                     </div>
 
                     <div class="detail-card full-width">
-                        <p class="detail-title">海拔高度 (左軸：高度趨勢)</p>
+                        <p class="detail-title">海拔高度</p>
                         <div class="chart-container" style="height: 180px;">
                             <canvas id="run-elev-chart-${run.id}"></canvas>
                         </div>
@@ -265,7 +265,7 @@ export function renderRunDetailsContent(container, run, bundle) {
             <section id="run-detail-panel-${run.id}-hr" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="hr">
                 <div class="run-details-grid">
                     <div class="detail-card full-width">
-                        <p class="detail-title">心率與海拔圖 (左軸：心率 / 右軸：海拔)</p>
+                        <p class="detail-title">心率與海拔</p>
                         <div class="chart-container" style="height: 200px;">
                             <canvas id="run-hr-elev-chart-${run.id}"></canvas>
                         </div>
@@ -282,7 +282,7 @@ export function renderRunDetailsContent(container, run, bundle) {
             <section id="run-detail-panel-${run.id}-pace" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="pace">
                 <div class="run-details-grid">
                     <div class="detail-card full-width">
-                        <p class="detail-title">配速與海拔圖 (左軸：配速 / 右軸：海拔)</p>
+                        <p class="detail-title">配速與海拔</p>
                         <div class="chart-container" style="height: 200px;">
                             <canvas id="run-pace-elev-chart-${run.id}"></canvas>
                         </div>
