@@ -1647,3 +1647,160 @@ a:focus-visible {
         min-height: 2.6rem;
     }
 }
+
+/* --- Run Detail Tabs + Charts --- */
+.run-details-layout {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.run-details-grid {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.run-detail-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    padding: 0.3rem;
+    border-radius: 14px;
+    border: 1px solid rgba(153, 174, 190, 0.18);
+    background: rgba(7, 19, 31, 0.65);
+}
+
+.run-detail-tab {
+    min-height: 2.35rem;
+    padding: 0.45rem 0.7rem;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    color: var(--text-soft);
+    font-size: 0.86rem;
+    font-weight: 700;
+    transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.run-detail-tab.is-active {
+    color: var(--text);
+    border-color: rgba(94, 234, 212, 0.28);
+    background: linear-gradient(135deg, rgba(94, 234, 212, 0.16), rgba(7, 19, 31, 0.76));
+}
+
+.run-detail-panel {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.run-map {
+    min-height: 240px;
+    border-radius: 14px;
+    border: 1px solid rgba(153, 174, 190, 0.16);
+    overflow: hidden;
+    background: rgba(9, 22, 34, 0.75);
+}
+
+.run-map .leaflet-control-attribution {
+    font-size: 0.66rem;
+    background: rgba(4, 11, 18, 0.62);
+    color: var(--text-soft);
+}
+
+.hr-zones-bar {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.hr-zone-track {
+    display: flex;
+    width: 100%;
+    min-height: 2.2rem;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 1px solid rgba(153, 174, 190, 0.18);
+    background: rgba(7, 19, 31, 0.72);
+}
+
+.hr-zone-segment {
+    width: var(--zone-width, 10%);
+    min-width: 0;
+    background: var(--zone-color, rgba(94, 234, 212, 0.8));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(2, 12, 18, 0.9);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.hr-zone-segment span {
+    white-space: nowrap;
+}
+
+.hr-zones-legend {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem 0.65rem;
+    margin-top: 0.5rem;
+}
+
+.hr-zone-legend-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    color: var(--text-soft);
+}
+
+.hr-zone-legend-item strong {
+    color: var(--text);
+    font-size: 0.84rem;
+}
+
+.hr-zone-dot {
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 999px;
+    background: var(--zone-color, rgba(94, 234, 212, 0.8));
+    box-shadow: 0 0 0 2px rgba(4, 11, 18, 0.44);
+}
+
+.split-pace-cell {
+    font-weight: 800;
+}
+
+.split-pace-cell.is-fastest::after,
+.split-pace-cell.is-slowest::after {
+    display: inline-flex;
+    margin-left: 0.45rem;
+    padding: 0.06rem 0.34rem;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+}
+
+.split-pace-cell.is-fastest::after {
+    content: "最快";
+    color: rgba(2, 12, 18, 0.92);
+    background: rgba(94, 234, 212, 0.9);
+}
+
+.split-pace-cell.is-slowest::after {
+    content: "最慢";
+    color: rgba(255, 241, 242, 0.95);
+    background: rgba(248, 113, 113, 0.35);
+}
+
+@media (max-width: 719px) {
+    .run-detail-tabs {
+        grid-template-columns: 1fr;
+    }
+
+    .hr-zones-legend {
+        grid-template-columns: 1fr;
+    }
+
+    .run-map {
+        min-height: 200px;
+    }
+}

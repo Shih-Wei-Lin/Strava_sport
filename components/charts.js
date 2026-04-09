@@ -1,5 +1,45 @@
 import { state } from "../state.js";
 
+const HR_ZONE_COLORS = [
+    "rgba(74, 222, 128, 0.82)", // Z1
+    "rgba(163, 230, 53, 0.82)", // Z2
+    "rgba(250, 204, 21, 0.82)", // Z3
+    "rgba(251, 146, 60, 0.84)", // Z4
+    "rgba(248, 113, 113, 0.86)", // Z5
+];
+
+const syncCrosshairPlugin = {
+    id: "syncCrosshair",
+    afterDatasetsDraw(chart, _args, opts) {
+        const active = chart.tooltip?.getActiveElements?.() || [];
+        if (active.length === 0) return;
+
+        const element = active[0]?.element;
+        if (!element) return;
+
+        const { ctx, chartArea } = chart;
+        if (!ctx || !chartArea) return;
+
+        ctx.save();
+        ctx.strokeStyle = opts?.color || "rgba(153, 174, 190, 0.35)";
+        ctx.lineWidth = opts?.width || 1;
+        ctx.setLineDash(opts?.dash || [4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(element.x, chartArea.top);
+        ctx.lineTo(element.x, chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+    },
+};
+
+let syncPluginReady = false;
+
+function ensureSyncPlugin() {
+    if (!window.Chart || syncPluginReady) return;
+    window.Chart.register(syncCrosshairPlugin);
+    syncPluginReady = true;
+}
+
 /**
  * Render the weekly mileage trend chart.
  * @param {Array} weeklyTrend - Trend data from activity summary.
@@ -92,6 +132,257 @@ function formatTimeLabel(seconds) {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function formatZoneDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "0m";
+    const totalMinutes = Math.round(seconds / 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${totalMinutes}m`;
+}
+
+function destroyRunVisuals(runId) {
+    const existing = state.runCharts.get(runId);
+    if (!existing) return;
+
+    for (const chart of existing.charts || []) {
+        try {
+            chart.destroy();
+        } catch (error) {
+            console.warn("Failed to destroy chart:", error);
+        }
+    }
+
+    if (existing.map) {
+        try {
+            existing.map.remove();
+        } catch (error) {
+            console.warn("Failed to destroy map:", error);
+        }
+    }
+
+    state.runCharts.delete(runId);
+}
+
+export function disposeRunVisuals(runId) {
+    destroyRunVisuals(runId);
+}
+
+export function disposeAllRunVisuals() {
+    const keys = Array.from(state.runCharts.keys());
+    keys.forEach((runId) => destroyRunVisuals(runId));
+}
+
+function getFirstUsableDatasetIndex(chart, dataIndex) {
+    const datasets = chart?.data?.datasets || [];
+    for (let datasetIndex = 0; datasetIndex < datasets.length; datasetIndex += 1) {
+        const value = datasets[datasetIndex]?.data?.[dataIndex];
+        if (value == null) continue;
+        if (typeof value === "number" && !Number.isFinite(value)) continue;
+        return datasetIndex;
+    }
+    return -1;
+}
+
+function setChartActiveIndex(chart, dataIndex) {
+    if (!chart?.tooltip) return;
+
+    if (!Number.isInteger(dataIndex) || dataIndex < 0) {
+        chart.setActiveElements([]);
+        chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+        chart.update("none");
+        return;
+    }
+
+    const datasetIndex = getFirstUsableDatasetIndex(chart, dataIndex);
+    if (datasetIndex < 0) {
+        chart.setActiveElements([]);
+        chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+        chart.update("none");
+        return;
+    }
+
+    const element = chart.getDatasetMeta(datasetIndex)?.data?.[dataIndex];
+    if (!element) {
+        chart.setActiveElements([]);
+        chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+        chart.update("none");
+        return;
+    }
+
+    const active = [{ datasetIndex, index: dataIndex }];
+    chart.setActiveElements(active);
+    chart.tooltip.setActiveElements(active, { x: element.x, y: element.y });
+    chart.update("none");
+}
+
+function bindSynchronizedHover(charts) {
+    const synced = charts.filter(Boolean);
+    if (synced.length <= 1) return;
+
+    const syncTo = (source, dataIndex) => {
+        synced.forEach((chart) => {
+            if (chart === source) return;
+            setChartActiveIndex(chart, dataIndex);
+        });
+    };
+
+    synced.forEach((chart) => {
+        chart.options.onHover = (_event, activeElements) => {
+            const hovered = Array.isArray(activeElements) ? activeElements : [];
+            if (hovered.length === 0) {
+                syncTo(chart, null);
+                return;
+            }
+            syncTo(chart, hovered[0].index);
+        };
+
+        chart.canvas?.addEventListener("mouseleave", () => {
+            synced.forEach((targetChart) => setChartActiveIndex(targetChart, null));
+        });
+
+        chart.update("none");
+    });
+}
+
+function renderHeartRateZoneBar(runId, hrSummary) {
+    const barHost = document.getElementById(`hr-zones-bar-${runId}`);
+    const legendHost = document.getElementById(`hr-zones-legend-${runId}`);
+    if (!barHost || !legendHost) return;
+
+    if (!hrSummary || !Array.isArray(hrSummary.zones) || hrSummary.zones.length === 0) {
+        barHost.innerHTML = '<p class="detail-copy">心率區間資料不足</p>';
+        legendHost.innerHTML = "";
+        return;
+    }
+
+    const segments = hrSummary.zones.map((zone, index) => {
+        const sharePercent = Number((zone.share * 100).toFixed(1));
+        const width = Math.max(zone.share * 100, 1.8);
+        return `
+            <div class="hr-zone-segment" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]}; --zone-width:${width}%;" title="${zone.label} ${sharePercent}% (${formatZoneDuration(zone.seconds)})">
+                <span>${zone.label}</span>
+            </div>
+        `;
+    }).join("");
+
+    const legends = hrSummary.zones.map((zone, index) => `
+        <div class="hr-zone-legend-item">
+            <span class="hr-zone-dot" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]};"></span>
+            <span>${zone.label}</span>
+            <strong>${(zone.share * 100).toFixed(1)}%</strong>
+            <span>${formatZoneDuration(zone.seconds)}</span>
+        </div>
+    `).join("");
+
+    barHost.innerHTML = `
+        <div class="hr-zone-track">
+            ${segments}
+        </div>
+    `;
+    legendHost.innerHTML = legends;
+}
+
+function getLatLngPoints(streams) {
+    const latlng = streams?.latlng?.data;
+    if (!Array.isArray(latlng)) return [];
+
+    return latlng
+        .filter((point) =>
+            Array.isArray(point)
+            && point.length >= 2
+            && Number.isFinite(point[0])
+            && Number.isFinite(point[1]))
+        .map(([lat, lng]) => [lat, lng]);
+}
+
+function renderRunRouteMap(runId, bundle) {
+    const container = document.getElementById(`run-map-${runId}`);
+    if (!container) return null;
+
+    const points = getLatLngPoints(bundle?.streams);
+    if (points.length < 2) {
+        container.innerHTML = '<p class="detail-copy">此活動沒有可用的 GPS 軌跡。</p>';
+        return null;
+    }
+
+    if (!window.L) {
+        container.innerHTML = '<p class="detail-copy">地圖元件尚未載入，稍後再試。</p>';
+        return null;
+    }
+
+    container.innerHTML = "";
+
+    const map = window.L.map(container, {
+        zoomControl: false,
+        attributionControl: true,
+        scrollWheelZoom: false,
+        tap: false,
+    });
+
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+
+    const track = window.L.polyline(points, {
+        color: "#5eead4",
+        weight: 4,
+        opacity: 0.9,
+    }).addTo(map);
+
+    window.L.circleMarker(points[0], {
+        radius: 5,
+        color: "#14b8a6",
+        fillColor: "#5eead4",
+        fillOpacity: 0.95,
+        weight: 2,
+    }).addTo(map);
+
+    window.L.circleMarker(points[points.length - 1], {
+        radius: 5,
+        color: "#fb7185",
+        fillColor: "#f97316",
+        fillOpacity: 0.95,
+        weight: 2,
+    }).addTo(map);
+
+    map.fitBounds(track.getBounds(), { padding: [24, 24] });
+
+    setTimeout(() => {
+        try {
+            map.invalidateSize();
+        } catch (error) {
+            console.warn("Map resize failed:", error);
+        }
+    }, 90);
+
+    return map;
+}
+
+export function resizeRunVisuals(runId) {
+    const visuals = state.runCharts.get(runId);
+    if (!visuals) return;
+
+    for (const chart of visuals.charts || []) {
+        try {
+            chart.resize();
+        } catch (error) {
+            console.warn("Chart resize failed:", error);
+        }
+    }
+
+    if (visuals.map) {
+        setTimeout(() => {
+            try {
+                visuals.map.invalidateSize();
+            } catch (error) {
+                console.warn("Map resize failed:", error);
+            }
+        }, 60);
+    }
+}
+
 /**
  * Render detailed activity charts (Split Trend lines + HR zones bar).
  * @param {string} runId - Activity ID.
@@ -99,16 +390,18 @@ function formatTimeLabel(seconds) {
  * @param {object} hrSummary - Pre-calculated HR zone summary.
  */
 export function renderActivityDetailCharts(runId, bundle, hrSummary) {
+    destroyRunVisuals(runId);
+
     const perfCanvas = document.getElementById(`run-perf-chart-${runId}`);
     const elevCanvas = document.getElementById(`run-elev-chart-${runId}`);
     const hrElevCanvas = document.getElementById(`run-hr-elev-chart-${runId}`);
     const paceElevCanvas = document.getElementById(`run-pace-elev-chart-${runId}`);
-    const hrZonesCanvas = document.getElementById(`hr-zones-chart-${runId}`);
     const { streams } = bundle;
 
-    if (!window.Chart) return;
+    const visuals = { charts: [], map: null };
 
-    if (streams?.time?.data) {
+    if (window.Chart && streams?.time?.data) {
+        ensureSyncPlugin();
         const timeData = streams.time.data;
         const hrData = streams.heartrate?.data || [];
         const altitudeData = streams.altitude?.data || [];
@@ -133,7 +426,7 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
 
         // 1. Performance Chart (Pace Left, HR Right)
         if (perfCanvas) {
-            new window.Chart(perfCanvas, {
+            visuals.charts.push(new window.Chart(perfCanvas, {
                 type: "line",
                 data: {
                     labels: timeLabels,
@@ -165,7 +458,8 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } }
+                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
+                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
                     },
                     scales: {
                         x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
@@ -188,12 +482,12 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                         }
                     }
                 }
-            });
+            }));
         }
 
         // 2. Elevation Chart (Left Axis)
         if (elevCanvas) {
-            new window.Chart(elevCanvas, {
+            visuals.charts.push(new window.Chart(elevCanvas, {
                 type: "line",
                 data: {
                     labels: timeLabels,
@@ -211,20 +505,22 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } }
+                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
+                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
                     },
                     scales: {
                         x: { grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
                         y: { title: { display: true, text: "高度 (m)", color: "#99aebe", font: { size: 10 } }, grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#99aebe", font: { size: 9 } } }
                     }
                 }
-            });
+            }));
         }
 
         // 3. HR + Elevation Chart
         if (hrElevCanvas) {
-            new window.Chart(hrElevCanvas, {
+            visuals.charts.push(new window.Chart(hrElevCanvas, {
                 type: "line",
                 data: {
                     labels: timeLabels,
@@ -257,7 +553,8 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } }
+                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
+                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
                     },
                     scales: {
                         x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
@@ -277,12 +574,12 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                         }
                     }
                 }
-            });
+            }));
         }
 
         // 4. Pace + Elevation Chart
         if (paceElevCanvas) {
-            new window.Chart(paceElevCanvas, {
+            visuals.charts.push(new window.Chart(paceElevCanvas, {
                 type: "line",
                 data: {
                     labels: timeLabels,
@@ -315,7 +612,8 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                     maintainAspectRatio: false,
                     interaction: { mode: "index", intersect: false },
                     plugins: {
-                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } }
+                        legend: { display: true, position: "top", labels: { color: "#99aebe", font: { size: 10 } } },
+                        syncCrosshair: { color: "rgba(153, 174, 190, 0.42)" },
                     },
                     scales: {
                         x: { display: true, grid: { display: false }, ticks: { color: "#99aebe", maxTicksLimit: 6, font: { size: 9 } } },
@@ -338,52 +636,19 @@ export function renderActivityDetailCharts(runId, bundle, hrSummary) {
                         }
                     }
                 }
-            });
+            }));
         }
-    }
 
-    if (hrZonesCanvas && hrSummary) {
-        const zoneColors = [
-            "rgba(74, 222, 128, 0.6)", // Z1
-            "rgba(163, 230, 53, 0.6)", // Z2
-            "rgba(250, 204, 21, 0.6)", // Z3
-            "rgba(251, 146, 60, 0.6)", // Z4
-            "rgba(248, 113, 113, 0.6)"  // Z5
-        ];
-
-        new window.Chart(hrZonesCanvas, {
-            type: "bar",
-            data: {
-                labels: hrSummary.zones.map(z => z.label),
-                datasets: [{
-                    label: "百分比 (%)",
-                    data: hrSummary.zones.map(z => (z.share * 100).toFixed(1)),
-                    backgroundColor: zoneColors,
-                    borderRadius: 6
-                }]
-            },
-            options: {
-                indexAxis: "y",
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label(context) {
-                                const zone = hrSummary.zones[context.dataIndex];
-                                return `${context.formattedValue}% (${Math.round(zone.seconds / 60)} 分鐘)`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: { beginAtZero: true, max: 100, grid: { color: "rgba(255, 255, 255, 0.05)" }, ticks: { color: "#99aebe", font: { size: 9 } } },
-                    y: { grid: { display: false }, ticks: { color: "#99aebe", font: { size: 10, weight: "bold" } } }
-                }
-            }
+        bindSynchronizedHover(visuals.charts);
+    } else if (!window.Chart) {
+        [perfCanvas, elevCanvas, hrElevCanvas, paceElevCanvas].forEach((canvas) => {
+            const container = canvas?.closest(".chart-container");
+            if (!container) return;
+            container.innerHTML = '<p class="detail-copy">圖表元件未載入，暫時無法顯示趨勢圖。</p>';
         });
     }
+
+    renderHeartRateZoneBar(runId, hrSummary);
+    visuals.map = renderRunRouteMap(runId, bundle);
+    state.runCharts.set(runId, visuals);
 }
-
-

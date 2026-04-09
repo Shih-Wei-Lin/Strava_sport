@@ -5,6 +5,7 @@ import { renderRuns, renderRunsSkeleton } from "../components/runs-list.js";
 import { renderTopStatsSkeleton, renderInsightSkeleton, renderPredictionSkeleton } from "../components/dashboard.js";
 import { renderPbGallery, renderPbSkeleton } from "../components/pb-gallery.js";
 import { bindSwipeGesture } from "../components/gestures.js";
+import { disposeAllRunVisuals } from "../components/charts.js";
 
 const RUNS_PER_PAGE = 10;
 const TABS = ["overview", "analysis", "pbs", "runs"];
@@ -204,6 +205,7 @@ export const UiController = {
     },
 
     renderEmptyDashboard() {
+        disposeAllRunVisuals();
         renderTopStatsSkeleton();
         renderInsightSkeleton();
         renderPredictionSkeleton();

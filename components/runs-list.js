@@ -11,7 +11,7 @@ import {
     analyzeWeatherImpact,
 } from "../analytics.js";
 
-import { renderActivityDetailCharts } from "./charts.js";
+import { renderActivityDetailCharts, resizeRunVisuals, disposeAllRunVisuals, disposeRunVisuals } from "./charts.js";
 
 /**
  * Render the run cards and pagination controls for the current page.
@@ -40,6 +40,7 @@ export function renderRuns(runs) {
     if (el.runsCount) el.runsCount.textContent = `${runs.length} 筆`;
 
     if (runs.length === 0) {
+        disposeAllRunVisuals();
         el.runsList.innerHTML = '<p class="empty-state">目前沒有任何跑步活動。</p>';
         el.runsPagination.classList.add("hidden");
         return;
@@ -49,6 +50,7 @@ export function renderRuns(runs) {
     const start = (state.runsPage - 1) * RUNS_PER_PAGE;
     const pageRuns = runs.slice(start, start + RUNS_PER_PAGE);
 
+    disposeAllRunVisuals();
     const html = pageRuns.map((run) => createRunCardHtml(run)).join("");
     el.runsList.innerHTML = html;
 
@@ -148,6 +150,8 @@ export async function toggleRunDetails(runId) {
 
     const isHidden = detailsEl.classList.contains("hidden");
     if (!isHidden) {
+        disposeRunVisuals(runId);
+        detailsEl.innerHTML = "";
         detailsEl.classList.add("hidden");
         return;
     }
@@ -186,6 +190,7 @@ export function renderRunDetailsContent(container, run, bundle) {
     let intervalsHtml = "";
 
     const splits = detail.splits_metric || [];
+    const paceSummary = getSplitPaceSummary(splits);
     const splitsHtml = splits.length > 0 ? `
         <div class="detail-card">
             <p class="detail-title">每公里拆分 (Splits)</p>
@@ -198,7 +203,7 @@ export function renderRunDetailsContent(container, run, bundle) {
                         ${splits.map(s => `
                             <tr>
                                 <td>${s.split}</td>
-                                <td>${formatPaceFromSpeed(s.average_speed)}</td>
+                                ${buildSplitPaceCell(s, paceSummary)}
                                 <td>${Math.round(s.elevation_difference)}m</td>
                                 <td>${s.average_heartrate ? Math.round(s.average_heartrate) : "--"}</td>
                             </tr>
@@ -214,57 +219,80 @@ export function renderRunDetailsContent(container, run, bundle) {
     const maxWatts = detail.max_watts ? `${Math.round(detail.max_watts)}W` : "--";
 
     container.innerHTML = `
-        <div class="run-details-grid">
-            <div class="detail-card full-width">
-                <p class="detail-title">性能趨勢 (左軸：配速 / 右軸：心率)</p>
-                <div class="chart-container" style="height: 200px;">
-                    <canvas id="run-perf-chart-${run.id}"></canvas>
+        <div class="run-details-layout">
+            <div class="run-detail-tabs" role="tablist" aria-label="單次跑步分析分頁">
+                <button class="run-detail-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="run-detail-panel-${run.id}-overview" data-run-detail-tab="overview">綜合表現</button>
+                <button class="run-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="run-detail-panel-${run.id}-hr" data-run-detail-tab="hr">心率分析</button>
+                <button class="run-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="run-detail-panel-${run.id}-pace" data-run-detail-tab="pace">配速分析</button>
+            </div>
+
+            <section id="run-detail-panel-${run.id}-overview" class="run-detail-panel is-active" role="tabpanel" data-run-detail-panel="overview">
+                <div class="run-details-grid">
+                    <div class="detail-card full-width">
+                        <p class="detail-title">GPS 路線</p>
+                        <div id="run-map-${run.id}" class="run-map"></div>
+                    </div>
+
+                    <div class="detail-card full-width">
+                        <p class="detail-title">性能趨勢 (左軸：配速 / 右軸：心率)</p>
+                        <div class="chart-container" style="height: 200px;">
+                            <canvas id="run-perf-chart-${run.id}"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="detail-card full-width">
+                        <p class="detail-title">海拔高度 (左軸：高度趨勢)</p>
+                        <div class="chart-container" style="height: 180px;">
+                            <canvas id="run-elev-chart-${run.id}"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="detail-card">
+                        <p class="detail-title">數據摘要</p>
+                        <p class="detail-copy">
+                            總爬升：${Math.round(run.elevationGain || 0)}m · 
+                            最大坡度：${maxGrade} · 
+                            最大功率：${maxWatts} · 
+                            卡路里：${detail.calories ? Math.round(detail.calories) : "--"} kcal
+                        </p>
+                    </div>
+
+                    ${weatherHtml || ""}
+                    ${intervalsHtml || ""}
                 </div>
-            </div>
+            </section>
 
-            <div class="detail-card full-width">
-                <p class="detail-title">心率與海拔圖 (左軸：心率 / 右軸：海拔)</p>
-                <div class="chart-container" style="height: 200px;">
-                    <canvas id="run-hr-elev-chart-${run.id}"></canvas>
+            <section id="run-detail-panel-${run.id}-hr" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="hr">
+                <div class="run-details-grid">
+                    <div class="detail-card full-width">
+                        <p class="detail-title">心率與海拔圖 (左軸：心率 / 右軸：海拔)</p>
+                        <div class="chart-container" style="height: 200px;">
+                            <canvas id="run-hr-elev-chart-${run.id}"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="detail-card full-width">
+                        <p class="detail-title">心率區間分佈</p>
+                        <div id="hr-zones-bar-${run.id}" class="hr-zones-bar"></div>
+                        <div id="hr-zones-legend-${run.id}" class="hr-zones-legend"></div>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            <div class="detail-card full-width">
-                <p class="detail-title">配速與海拔圖 (左軸：配速 / 右軸：海拔)</p>
-                <div class="chart-container" style="height: 200px;">
-                    <canvas id="run-pace-elev-chart-${run.id}"></canvas>
+            <section id="run-detail-panel-${run.id}-pace" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="pace">
+                <div class="run-details-grid">
+                    <div class="detail-card full-width">
+                        <p class="detail-title">配速與海拔圖 (左軸：配速 / 右軸：海拔)</p>
+                        <div class="chart-container" style="height: 200px;">
+                            <canvas id="run-pace-elev-chart-${run.id}"></canvas>
+                        </div>
+                    </div>
+                    ${splitsHtml}
                 </div>
-            </div>
-
-            <div class="detail-card full-width">
-                <p class="detail-title">海拔高度 (左軸：高度趨勢)</p>
-                <div class="chart-container" style="height: 180px;">
-                    <canvas id="run-elev-chart-${run.id}"></canvas>
-                </div>
-            </div>
-
-            <div class="detail-card">
-                <p class="detail-title">心率區間分佈</p>
-                <div class="chart-container" style="height: 180px;">
-                    <canvas id="hr-zones-chart-${run.id}"></canvas>
-                </div>
-            </div>
-
-            <div class="detail-card">
-                <p class="detail-title">數據摘要</p>
-                <p class="detail-copy">
-                    總爬升：${Math.round(run.elevationGain || 0)}m · 
-                    最大坡度：${maxGrade} · 
-                    最大功率：${maxWatts} · 
-                    卡路里：${detail.calories ? Math.round(detail.calories) : "--"} kcal
-                </p>
-            </div>
-
-            ${weatherHtml || ""}
-            ${intervalsHtml || ""}
-            ${splitsHtml}
+            </section>
         </div>
     `;
+    bindRunDetailTabs(container, run.id);
 
     // Trigger chart rendering after a short delay to ensure canvas is ready
     setTimeout(() => {
@@ -272,3 +300,68 @@ export function renderRunDetailsContent(container, run, bundle) {
     }, 60);
 }
 
+function bindRunDetailTabs(container, runId) {
+    const tabs = Array.from(container.querySelectorAll(".run-detail-tab"));
+    const panels = Array.from(container.querySelectorAll(".run-detail-panel"));
+    if (tabs.length === 0 || panels.length === 0) return;
+
+    tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+            const target = tab.dataset.runDetailTab;
+            tabs.forEach((button) => {
+                const isActive = button === tab;
+                button.classList.toggle("is-active", isActive);
+                button.setAttribute("aria-selected", String(isActive));
+            });
+
+            panels.forEach((panel) => {
+                panel.classList.toggle("hidden", panel.dataset.runDetailPanel !== target);
+                panel.classList.toggle("is-active", panel.dataset.runDetailPanel === target);
+            });
+
+            setTimeout(() => resizeRunVisuals(runId), 80);
+        });
+    });
+}
+
+function getSplitPaceSummary(splits) {
+    const paceSeconds = splits
+        .map((split) => Number.isFinite(split?.average_speed) && split.average_speed > 0 ? 1000 / split.average_speed : null)
+        .filter((pace) => Number.isFinite(pace));
+
+    if (paceSeconds.length === 0) {
+        return { min: null, max: null };
+    }
+
+    return {
+        min: Math.min(...paceSeconds),
+        max: Math.max(...paceSeconds),
+    };
+}
+
+function buildSplitPaceCell(split, summary) {
+    const paceLabel = formatPaceFromSpeed(split.average_speed);
+    const paceSec = Number.isFinite(split?.average_speed) && split.average_speed > 0 ? 1000 / split.average_speed : null;
+
+    if (!Number.isFinite(paceSec) || !Number.isFinite(summary.min) || !Number.isFinite(summary.max)) {
+        return `<td>${paceLabel}</td>`;
+    }
+
+    const range = Math.max(summary.max - summary.min, 1e-6);
+    const normalized = Math.max(0, Math.min(1, (paceSec - summary.min) / range));
+    const color = blendRgb([94, 234, 212], [248, 113, 113], normalized);
+
+    let badgeClass = "";
+    if (Math.abs(paceSec - summary.min) < 1e-6) badgeClass = "is-fastest";
+    if (Math.abs(paceSec - summary.max) < 1e-6) badgeClass = "is-slowest";
+
+    return `<td class="split-pace-cell ${badgeClass}" style="color: ${color};">${paceLabel}</td>`;
+}
+
+function blendRgb(from, to, ratio) {
+    const value = Math.max(0, Math.min(1, ratio));
+    const r = Math.round(from[0] + (to[0] - from[0]) * value);
+    const g = Math.round(from[1] + (to[1] - from[1]) * value);
+    const b = Math.round(from[2] + (to[2] - from[2]) * value);
+    return `rgb(${r}, ${g}, ${b})`;
+}
