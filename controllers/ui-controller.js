@@ -26,6 +26,9 @@ export const UiController = {
         document.querySelectorAll(".dashboard-tab").forEach((button) => {
             button.addEventListener("click", () => this.switchTab(button.dataset.dashboardTab));
         });
+        document.querySelectorAll("[data-runs-view]").forEach((button) => {
+            button.addEventListener("click", () => this.setRunsViewMode(button.dataset.runsView));
+        });
 
         document.getElementById("cal-prev-btn")?.addEventListener("click", () => this.changeCalendarMonth(-1));
         document.getElementById("cal-next-btn")?.addEventListener("click", () => this.changeCalendarMonth(1));
@@ -47,6 +50,7 @@ export const UiController = {
             });
         });
 
+        this.syncRunsViewModeUi();
         this.registerServiceWorker();
         this.bindInstallPrompt();
     },
@@ -164,6 +168,29 @@ export const UiController = {
         state.runsPage = nextPage;
         renderRuns(state.summary.runs);
         document.getElementById("runs-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+
+    setRunsViewMode(mode) {
+        const nextMode = mode === "list" ? "list" : "card";
+        if (state.runsViewMode === nextMode) return;
+
+        state.runsViewMode = nextMode;
+        try {
+            localStorage.setItem(STORAGE_KEYS.runsViewMode, nextMode);
+        } catch (error) {
+            console.warn("Failed to persist runs view mode:", error);
+        }
+
+        this.syncRunsViewModeUi();
+        if (state.summary) renderRuns(state.summary.runs);
+    },
+
+    syncRunsViewModeUi() {
+        document.querySelectorAll("[data-runs-view]").forEach((button) => {
+            const isActive = button.dataset.runsView === state.runsViewMode;
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-pressed", String(isActive));
+        });
     },
 
     async generateCoachPrompt(provider) {

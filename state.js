@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
     athleteName: "strava_athlete_name",
     authState: "strava_oauth_state",
     calendarHeatmapMode: "calendar_heatmap_mode",
+    runsViewMode: "runs_view_mode",
     restingHr: "strava_resting_hr",
     maxHr: "strava_max_hr",
 };
@@ -44,6 +45,7 @@ export const state = {
     calMonth: new Date().getMonth(),
     calYear: new Date().getFullYear(),
     calendarHeatmapMode: getSafeStorage(STORAGE_KEYS.calendarHeatmapMode, "distance"),
+    runsViewMode: getSafeStorage(STORAGE_KEYS.runsViewMode, "card"),
     dashboardTab: "overview",
     installPromptEvent: null,
     pullRefresh: {

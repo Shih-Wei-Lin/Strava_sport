@@ -323,9 +323,15 @@
                         </div>
                         <span id="runs-count" class="section-meta">0 筆</span>
                     </div>
-                    <div class="inline-actions export-actions">
-                        <button id="download-all-json-btn" class="btn btn-ghost" type="button">匯出全部 JSON</button>
-                        <button id="download-all-md-btn" class="btn btn-ghost" type="button">匯出全部 Markdown</button>
+                    <div class="runs-toolbar">
+                        <div class="inline-actions export-actions">
+                            <button id="download-all-json-btn" class="btn btn-ghost" type="button">匯出全部 JSON</button>
+                            <button id="download-all-md-btn" class="btn btn-ghost" type="button">匯出全部 Markdown</button>
+                        </div>
+                        <div class="view-toggle" role="group" aria-label="跑步列表檢視">
+                            <button id="runs-view-card-btn" class="view-toggle-btn is-active" type="button" data-runs-view="card" aria-pressed="true">卡片模式</button>
+                            <button id="runs-view-list-btn" class="view-toggle-btn" type="button" data-runs-view="list" aria-pressed="false">列表模式</button>
+                        </div>
                     </div>
                     <div id="runs-list" class="runs-list">
                         <p class="empty-state">尚未載入任何跑步活動。</p>

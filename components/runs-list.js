@@ -36,6 +36,7 @@ export function renderRuns(runs) {
     };
 
     if (!el.runsList || !el.runsPagination) return;
+    el.runsList.dataset.viewMode = state.runsViewMode;
 
     if (el.runsCount) el.runsCount.textContent = `${runs.length} 筆`;
 
@@ -77,6 +78,10 @@ export function renderRuns(runs) {
                 return;
             }
 
+            if (e.target.closest(".run-export")) {
+                return;
+            }
+
             // 2. IF click is inside the detail analysis content, don't toggle (prevents chart click closing)
             if (e.target.closest(".run-details")) {
                 return;
@@ -94,20 +99,31 @@ export function renderRuns(runs) {
 export function renderRunsSkeleton() {
     const runsList = document.getElementById("runs-list");
     if (!runsList) return;
+    runsList.dataset.viewMode = state.runsViewMode;
 
     const skeletonCard = `
         <article class="run-card skeleton-card">
-            <div class="run-header">
-                <div>
-                     <div class="skeleton" style="width: 140px; height: 1.2rem; margin-bottom: 0.5rem;"></div>
-                     <div class="skeleton" style="width: 80px; height: 0.8rem;"></div>
+            <div class="run-main">
+                <div class="run-header">
+                    <div>
+                        <div class="skeleton" style="width: 140px; height: 1.2rem; margin-bottom: 0.5rem;"></div>
+                        <div class="skeleton" style="width: 120px; height: 0.8rem;"></div>
+                    </div>
+                    <div class="skeleton" style="width: 64px; height: 1.8rem; border-radius: 999px;"></div>
                 </div>
-            </div>
-            <div class="run-metrics">
-                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
-                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
-                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
-                <div class="metric-box"><div class="skeleton" style="width: 100%;"></div></div>
+                <div class="run-ribbon">
+                    <div class="metric-pill"><div class="skeleton" style="width: 88px;"></div></div>
+                    <div class="metric-pill"><div class="skeleton" style="width: 92px;"></div></div>
+                    <div class="metric-pill"><div class="skeleton" style="width: 86px;"></div></div>
+                    <div class="metric-pill"><div class="skeleton" style="width: 82px;"></div></div>
+                </div>
+                <div class="run-card-side">
+                    <div class="skeleton" style="width: 112px; height: 42px; border-radius: 12px;"></div>
+                    <div class="run-actions">
+                        <div class="skeleton" style="width: 88px; height: 2.2rem; border-radius: 999px;"></div>
+                        <div class="skeleton" style="width: 2.2rem; height: 2.2rem; border-radius: 999px;"></div>
+                    </div>
+                </div>
             </div>
         </article>
     `;
@@ -117,31 +133,110 @@ export function renderRunsSkeleton() {
 
 function createRunCardHtml(run) {
     const badge = run.distanceKm >= 21.1 ? "半馬級別" : run.distanceKm >= 10 ? "長跑" : "一般跑步";
+    const heartRateLabel = run.averageHeartrate ? `${Math.round(run.averageHeartrate)} bpm` : "--";
     
     return `
         <article id="run-${run.id}" class="run-card">
-            <div class="run-header">
-                <div>
-                    <h3 class="run-title">${escapeHtml(run.name)}</h3>
-                    <p class="run-date">${run.dateLabel}</p>
+            <div class="run-main">
+                <div class="run-header">
+                    <div class="run-heading">
+                        <div class="run-title-row">
+                            <h3 class="run-title">${escapeHtml(run.name)}</h3>
+                            <a href="https://www.strava.com/activities/${run.id}" target="_blank" rel="noopener" class="run-link-icon" aria-label="在 Strava 開啟活動" title="在 Strava 開啟活動">${buildExternalLinkIcon()}</a>
+                        </div>
+                        <div class="run-meta-line">
+                            <p class="run-date">${run.dateLabel}</p>
+                            <span class="run-badge">${badge}</span>
+                        </div>
+                    </div>
                 </div>
-                <span class="run-badge">${badge}</span>
-            </div>
-            <div class="run-metrics">
-                <div class="metric-box"><span class="metric-label">距離</span><strong class="metric-value">${run.distanceKm.toFixed(2)} km</strong></div>
-                <div class="metric-box"><span class="metric-label">配速</span><strong class="metric-value">${run.averagePaceLabel}</strong></div>
-                <div class="metric-box"><span class="metric-label">時間</span><strong class="metric-value">${run.movingTimeLabel}</strong></div>
-                <div class="metric-box"><span class="metric-label">心率</span><strong class="metric-value">${run.averageHeartrate ? Math.round(run.averageHeartrate) : "--"} bpm</strong></div>
-            </div>
-            <div class="run-actions">
-                <button class="btn btn-primary btn-sm btn-expand" data-id="${run.id}">詳細分析</button>
-                <button class="btn btn-ghost btn-sm btn-download-json" data-id="${run.id}">JSON</button>
-                <button class="btn btn-ghost btn-sm btn-download-md" data-id="${run.id}">MD</button>
-                <a href="https://www.strava.com/activities/${run.id}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Strava</a>
+                <div class="run-ribbon">
+                    ${createMetricPillHtml("distance", `${run.distanceKm.toFixed(2)} km`, "距離")}
+                    ${createMetricPillHtml("pace", run.averagePaceLabel, "配速")}
+                    ${createMetricPillHtml("duration", run.movingTimeLabel, "時間")}
+                    ${createMetricPillHtml("heart", heartRateLabel, "心率")}
+                </div>
+                <div class="run-card-side">
+                    <div class="run-sparkline" aria-hidden="true">
+                        ${createSparklineSvg(run)}
+                    </div>
+                    <div class="run-actions">
+                        <button class="btn btn-primary btn-sm btn-expand" data-id="${run.id}">詳細分析</button>
+                        <details class="run-export">
+                            <summary class="btn btn-ghost btn-sm btn-icon" aria-label="匯出活動資料" title="匯出活動資料">
+                                ${buildDownloadIcon()}
+                            </summary>
+                            <div class="run-export-menu">
+                                <button class="run-export-option btn-download-json" type="button" data-id="${run.id}">JSON</button>
+                                <button class="run-export-option btn-download-md" type="button" data-id="${run.id}">Markdown</button>
+                            </div>
+                        </details>
+                    </div>
+                </div>
             </div>
             <div id="run-details-${run.id}" class="run-details hidden"></div>
         </article>
     `;
+}
+
+function createMetricPillHtml(icon, value, label) {
+    return `
+        <div class="metric-pill" title="${label}">
+            <span class="metric-icon" aria-hidden="true">${buildMetricIcon(icon)}</span>
+            <strong class="metric-pill-value">${value}</strong>
+        </div>
+    `;
+}
+
+function createSparklineSvg(run) {
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const idSeed = String(run.id).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const paceFactor = run.averagePaceSec ? clamp(420 / run.averagePaceSec, 0.2, 1) : 0.52;
+    const hrFactor = run.averageHeartrate ? clamp((run.averageHeartrate - 110) / 55, 0.18, 1) : 0.44;
+    const elevFactor = clamp((run.elevationGain || 0) / 240, 0.08, 1);
+    const distanceFactor = clamp(run.distanceKm / 21.1, 0.16, 1);
+    const varianceA = ((idSeed % 11) - 5) / 50;
+    const varianceB = (((idSeed >> 2) % 13) - 6) / 55;
+    const values = [
+        clamp(0.4 + varianceA, 0.15, 0.9),
+        clamp(paceFactor + varianceB, 0.18, 0.95),
+        clamp(hrFactor, 0.18, 0.95),
+        clamp(0.28 + elevFactor * 0.55, 0.15, 0.95),
+        clamp(distanceFactor + varianceA * 0.8, 0.18, 0.95),
+        clamp(0.46 + varianceB, 0.15, 0.95),
+    ];
+
+    const width = 112;
+    const height = 36;
+    const step = width / (values.length - 1);
+    const points = values
+        .map((value, index) => `${(index * step).toFixed(1)},${(height - value * (height - 6) - 3).toFixed(1)}`)
+        .join(" ");
+
+    return `
+        <svg viewBox="0 0 ${width} ${height}" focusable="false">
+            <polyline class="sparkline-fill" points="0,${height} ${points} ${width},${height}" />
+            <polyline class="sparkline-line" points="${points}" />
+        </svg>
+    `;
+}
+
+function buildMetricIcon(type) {
+    const icons = {
+        distance: '<svg viewBox="0 0 24 24" focusable="false"><path d="M4 17 17 4"/><path d="M8 4h9v9"/><path d="M7 20h10"/></svg>',
+        pace: '<svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="13" r="7"/><path d="M12 13 16 9"/><path d="M9 4h6"/></svg>',
+        duration: '<svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="13" r="7"/><path d="M12 9v4l3 2"/><path d="M9 4h6"/></svg>',
+        heart: '<svg viewBox="0 0 24 24" focusable="false"><path d="M12 20s-7-4.4-7-9.6A4.4 4.4 0 0 1 12 7a4.4 4.4 0 0 1 7 3.4C19 15.6 12 20 12 20Z"/></svg>',
+    };
+    return icons[type] || icons.distance;
+}
+
+function buildDownloadIcon() {
+    return '<svg viewBox="0 0 24 24" focusable="false"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M5 18h14"/></svg>';
+}
+
+function buildExternalLinkIcon() {
+    return '<svg viewBox="0 0 24 24" focusable="false"><path d="M14 5h5v5"/><path d="M10 14 19 5"/><path d="M19 14v5H5V5h5"/></svg>';
 }
 
 export async function toggleRunDetails(runId) {
