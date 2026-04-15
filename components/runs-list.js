@@ -387,15 +387,15 @@ export function renderRunDetailsContent(container, run, bundle) {
             </section>
         </div>
     `;
-    bindRunDetailTabs(container, run.id);
+    bindRunDetailTabs(container, run.id, bundle, hrSummary);
 
     // Trigger chart rendering after a short delay to ensure canvas is ready
     setTimeout(() => {
-        renderActivityDetailCharts(run.id, bundle, hrSummary);
+        renderActivityDetailCharts(run.id, bundle, hrSummary, "overview");
     }, 60);
 }
 
-function bindRunDetailTabs(container, runId) {
+function bindRunDetailTabs(container, runId, bundle, hrSummary) {
     const tabs = Array.from(container.querySelectorAll(".run-detail-tab"));
     const panels = Array.from(container.querySelectorAll(".run-detail-panel"));
     if (tabs.length === 0 || panels.length === 0) return;
@@ -414,7 +414,10 @@ function bindRunDetailTabs(container, runId) {
                 panel.classList.toggle("is-active", panel.dataset.runDetailPanel === target);
             });
 
-            setTimeout(() => resizeRunVisuals(runId), 80);
+            setTimeout(() => {
+                renderActivityDetailCharts(runId, bundle, hrSummary, target);
+                resizeRunVisuals(runId);
+            }, 80);
         });
     });
 }

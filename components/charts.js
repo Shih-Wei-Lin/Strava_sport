@@ -64,6 +64,7 @@ export function renderWeeklyChart(weeklyTrend) {
                     backgroundColor: "rgba(94, 234, 212, 0.14)",
                     borderWidth: 2,
                     fill: true,
+                    spanGaps: true,
                     tension: 0.28,
                     cubicInterpolationMode: "monotone",
                     pointRadius: 2,
@@ -75,6 +76,7 @@ export function renderWeeklyChart(weeklyTrend) {
             ],
         },
         options: {
+            ...buildChartPerformanceOptions(),
             responsive: true,
             maintainAspectRatio: false,
             interaction: {
@@ -114,13 +116,26 @@ export function renderWeeklyChart(weeklyTrend) {
     });
 }
 
+function buildChartPerformanceOptions() {
+    return {
+        animation: false,
+        normalized: true,
+    };
+}
+
 /**
- * Helper to downsample time-series data for chart performance.
+ * Build downsampled indexes without allocating an intermediate full-length array.
  */
-function downsample(data, limit = 150) {
-    if (!Array.isArray(data) || data.length <= limit) return data;
-    const step = Math.max(1, Math.floor(data.length / limit));
-    return data.filter((_, i) => i % step === 0);
+function buildDownsampledIndices(length, limit = 150) {
+    if (!Number.isInteger(length) || length <= 0) return [];
+    if (length <= limit) return Array.from({ length }, (_, index) => index);
+
+    const step = Math.max(1, Math.floor(length / limit));
+    const indices = [];
+    for (let index = 0; index < length; index += step) {
+        indices.push(index);
+    }
+    return indices;
 }
 
 /**
@@ -145,7 +160,8 @@ function destroyRunVisuals(runId) {
     const existing = state.runCharts.get(runId);
     if (!existing) return;
 
-    for (const chart of existing.charts || []) {
+    const charts = existing.chartsByKey ? Array.from(existing.chartsByKey.values()) : existing.charts || [];
+    for (const chart of charts) {
         try {
             chart.destroy();
         } catch (error) {
@@ -237,9 +253,14 @@ function bindSynchronizedHover(charts) {
             syncTo(chart, hovered[0].index);
         };
 
-        chart.canvas?.addEventListener("mouseleave", () => {
+        if (chart.$strideMouseLeaveHandler) {
+            chart.canvas?.removeEventListener("mouseleave", chart.$strideMouseLeaveHandler);
+        }
+
+        chart.$strideMouseLeaveHandler = () => {
             synced.forEach((targetChart) => setChartActiveIndex(targetChart, null));
-        });
+        };
+        chart.canvas?.addEventListener("mouseleave", chart.$strideMouseLeaveHandler);
 
         chart.update("none");
     });
@@ -411,7 +432,8 @@ export function resizeRunVisuals(runId) {
     const visuals = state.runCharts.get(runId);
     if (!visuals) return;
 
-    for (const chart of visuals.charts || []) {
+    const charts = visuals.chartsByKey ? Array.from(visuals.chartsByKey.values()) : visuals.charts || [];
+    for (const chart of charts) {
         try {
             chart.resize();
         } catch (error) {
@@ -430,294 +452,358 @@ export function resizeRunVisuals(runId) {
     }
 }
 
-/**
- * Render detailed activity charts (Split Trend lines + HR zones bar).
- * @param {string} runId - Activity ID.
- * @param {object} bundle - Contains detail and streams.
- * @param {object} hrSummary - Pre-calculated HR zone summary.
- */
-export function renderActivityDetailCharts(runId, bundle, hrSummary) {
-    destroyRunVisuals(runId);
+function getRunVisuals(runId, bundle, hrSummary) {
+    const existing = state.runCharts.get(runId);
+    if (existing) {
+        existing.bundle = bundle;
+        existing.hrSummary = hrSummary;
+        return existing;
+    }
 
-    const perfCanvas = document.getElementById(`run-perf-chart-${runId}`);
-    const elevCanvas = document.getElementById(`run-elev-chart-${runId}`);
-    const hrElevCanvas = document.getElementById(`run-hr-elev-chart-${runId}`);
-    const paceElevCanvas = document.getElementById(`run-pace-elev-chart-${runId}`);
-    const { streams } = bundle;
+    const visuals = {
+        bundle,
+        hrSummary,
+        chartsByKey: new Map(),
+        chartData: null,
+        renderedPanels: new Set(),
+        map: null,
+    };
+    state.runCharts.set(runId, visuals);
+    return visuals;
+}
 
-    const visuals = { charts: [], map: null };
+function getRunVisualCharts(visuals) {
+    return visuals?.chartsByKey ? Array.from(visuals.chartsByKey.values()) : [];
+}
 
-    if (window.Chart && streams?.time?.data) {
-        ensureSyncPlugin();
-        const timeData = streams.time.data;
-        const hrData = streams.heartrate?.data || [];
-        const altitudeData = streams.altitude?.data || [];
-        const velocityData = streams.velocity_smooth?.data || [];
+function buildDetailChartData(bundle) {
+    const streams = bundle?.streams;
+    const timeData = streams?.time?.data;
+    if (!Array.isArray(timeData) || timeData.length === 0) return null;
 
-        // Downsample all streams uniformly
-        const indices = downsample(timeData.map((_, i) => i), 100);
-        const timeLabels = indices.map(i => formatTimeLabel(timeData[i]));
-        const dsHr = indices.map(i => hrData[i] || null);
-        const dsAlt = indices.map(i => altitudeData[i] || null);
-        const dsPace = indices.map(i => {
-            const speed = velocityData[i];
-            if (!speed || speed <= 0.5) return null; // Filter out stops
-            return 1000 / (speed * 60); // min/km
+    const hrData = streams.heartrate?.data || [];
+    const altitudeData = streams.altitude?.data || [];
+    const velocityData = streams.velocity_smooth?.data || [];
+    const indices = buildDownsampledIndices(timeData.length, 100);
+    const timeLabels = indices.map((index) => formatTimeLabel(timeData[index]));
+    const dsHr = indices.map((index) => hrData[index] || null);
+    const dsAlt = indices.map((index) => altitudeData[index] || null);
+    const dsPace = indices.map((index) => {
+        const speed = velocityData[index];
+        if (!speed || speed <= 0.5) return null;
+        return 1000 / (speed * 60);
+    });
+
+    const validPaces = dsPace.filter((pace) => pace !== null && pace < 45);
+    const maxPaceVal = validPaces.length ? Math.max(...validPaces) : 12;
+    const minPaceVal = validPaces.length ? Math.min(...validPaces) : 3;
+
+    return {
+        timeLabels,
+        dsHr,
+        dsAlt,
+        dsPace,
+        yPaceMax: Math.min(35, Math.ceil(maxPaceVal) + 1),
+        yPaceMin: Math.max(1, Math.floor(minPaceVal) - 1),
+    };
+}
+
+function getCachedDetailChartData(visuals) {
+    if (!visuals.chartData) {
+        visuals.chartData = buildDetailChartData(visuals.bundle);
+    }
+    return visuals.chartData;
+}
+
+function setChartUnavailableMessage(runId, chartKeys) {
+    chartKeys.forEach((key) => {
+        const canvas = document.getElementById(`run-${key}-chart-${runId}`);
+        const container = canvas?.closest(".chart-container");
+        if (!container) return;
+        container.innerHTML = '<p class="detail-copy">圖表元件未載入，暫時無法顯示趨勢圖。</p>';
+    });
+}
+
+function createRunChart(visuals, key, canvas, config) {
+    if (!canvas || visuals.chartsByKey.has(key)) return;
+    visuals.chartsByKey.set(key, new window.Chart(canvas, config));
+}
+
+function buildDetailChartOptions(scales) {
+    return {
+        ...buildChartPerformanceOptions(),
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        layout: { padding: { left: 4, right: 4 } },
+        plugins: {
+            ...buildDetailChartPlugins(),
+        },
+        scales,
+    };
+}
+
+function renderOverviewVisuals(runId, visuals, chartData) {
+    if (visuals.renderedPanels.has("overview")) return;
+
+    if (window.Chart && chartData) {
+        const perfCanvas = document.getElementById(`run-perf-chart-${runId}`);
+        const elevCanvas = document.getElementById(`run-elev-chart-${runId}`);
+
+        createRunChart(visuals, "perf", perfCanvas, {
+            type: "line",
+            data: {
+                labels: chartData.timeLabels,
+                datasets: [
+                    {
+                        label: "配速 (min/km)",
+                        data: chartData.dsPace,
+                        borderColor: "#5eead4",
+                        backgroundColor: "transparent",
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        tension: 0.3,
+                        yAxisID: "y-pace",
+                    },
+                    {
+                        label: "心率 (bpm)",
+                        data: chartData.dsHr,
+                        borderColor: "#fb7185",
+                        backgroundColor: "transparent",
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        tension: 0.3,
+                        yAxisID: "y-hr",
+                    },
+                ],
+            },
+            options: buildDetailChartOptions({
+                x: buildDetailXAxis(),
+                "y-pace": {
+                    type: "linear",
+                    position: "left",
+                    reverse: true,
+                    min: chartData.yPaceMin,
+                    max: chartData.yPaceMax,
+                    title: buildDetailAxisTitle("配速", "#5eead4"),
+                    grid: { color: "rgba(255, 255, 255, 0.05)" },
+                    ticks: { color: "#5eead4", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
+                },
+                "y-hr": {
+                    type: "linear",
+                    position: "right",
+                    title: buildDetailAxisTitle("心率", "#fb7185"),
+                    grid: { display: false },
+                    ticks: { color: "#fb7185", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
+                },
+            }),
         });
 
-        const validPaces = dsPace.filter(p => p !== null && p < 45); // Ignore anomalies > 45 min/km
-        const maxPaceVal = validPaces.length ? Math.max(...validPaces) : 12;
-        const minPaceVal = validPaces.length ? Math.min(...validPaces) : 3;
-        const yPaceMax = Math.min(35, Math.ceil(maxPaceVal) + 1);
-        const yPaceMin = Math.max(1, Math.floor(minPaceVal) - 1);
-
-        // 1. Performance Chart (Pace Left, HR Right)
-        if (perfCanvas) {
-            visuals.charts.push(new window.Chart(perfCanvas, {
-                type: "line",
-                data: {
-                    labels: timeLabels,
-                    datasets: [
-                        {
-                            label: "配速 (min/km)",
-                            data: dsPace,
-                            borderColor: "#5eead4",
-                            backgroundColor: "transparent",
-                            borderWidth: 1,
-                            pointRadius: 0,
-                            tension: 0.3,
-                            yAxisID: "y-pace",
-                        },
-                        {
-                            label: "心率 (bpm)",
-                            data: dsHr,
-                            borderColor: "#fb7185",
-                            backgroundColor: "transparent",
-                            borderWidth: 1,
-                            pointRadius: 0,
-                            tension: 0.3,
-                            yAxisID: "y-hr",
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: "index", intersect: false },
-                    layout: { padding: { left: 4, right: 4 } },
-                    plugins: {
-                        ...buildDetailChartPlugins(),
-                    },
-                    scales: {
-                        x: buildDetailXAxis(),
-                        "y-pace": {
-                            type: "linear",
-                            position: "left",
-                            reverse: true,
-                            min: yPaceMin,
-                            max: yPaceMax,
-                            title: buildDetailAxisTitle("配速", "#5eead4"),
-                            grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#5eead4", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
-                        },
-                        "y-hr": {
-                            type: "linear",
-                            position: "right",
-                            title: buildDetailAxisTitle("心率", "#fb7185"),
-                            grid: { display: false },
-                            ticks: { color: "#fb7185", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
-                        }
-                    }
-                }
-            }));
-        }
-
-        // 2. Elevation Chart (Left Axis)
-        if (elevCanvas) {
-            visuals.charts.push(new window.Chart(elevCanvas, {
-                type: "line",
-                data: {
-                    labels: timeLabels,
-                    datasets: [{
+        createRunChart(visuals, "elev", elevCanvas, {
+            type: "line",
+            data: {
+                labels: chartData.timeLabels,
+                datasets: [
+                    {
                         label: "海拔高度 (m)",
-                        data: dsAlt,
+                        data: chartData.dsAlt,
                         borderColor: "#94a3b8",
                         backgroundColor: "rgba(148, 163, 184, 0.1)",
                         borderWidth: 1.5,
                         fill: true,
                         pointRadius: 0,
-                        tension: 0.2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: "index", intersect: false },
-                    layout: { padding: { left: 4, right: 4 } },
-                    plugins: {
-                        ...buildDetailChartPlugins(),
+                        spanGaps: true,
+                        tension: 0.2,
                     },
-                    scales: {
-                        x: buildDetailXAxis(),
-                        y: {
-                            title: buildDetailAxisTitle("海拔", "#99aebe"),
-                            grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#99aebe", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
-                        },
-                        "y-spacer": {
-                            type: "linear",
-                            position: "right",
-                            display: false,
-                            min: 0,
-                            max: 1,
-                            grid: { display: false, drawOnChartArea: false, drawTicks: false },
-                            ticks: { display: false },
-                            border: { display: false },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
-                        },
-                    }
-                }
-            }));
-        }
-
-        // 3. HR + Elevation Chart
-        if (hrElevCanvas) {
-            visuals.charts.push(new window.Chart(hrElevCanvas, {
-                type: "line",
-                data: {
-                    labels: timeLabels,
-                    datasets: [
-                        {
-                            label: "海拔高度 (m)",
-                            data: dsAlt,
-                            borderColor: "transparent",
-                            backgroundColor: "rgba(148, 163, 184, 0.2)",
-                            borderWidth: 0,
-                            fill: true,
-                            pointRadius: 0,
-                            tension: 0.2,
-                            yAxisID: "y-elev",
-                        },
-                        {
-                            label: "心率 (bpm)",
-                            data: dsHr,
-                            borderColor: "#fb7185",
-                            backgroundColor: "transparent",
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            tension: 0.3,
-                            yAxisID: "y-hr",
-                        }
-                    ]
+                ],
+            },
+            options: buildDetailChartOptions({
+                x: buildDetailXAxis(),
+                y: {
+                    title: buildDetailAxisTitle("海拔", "#99aebe"),
+                    grid: { color: "rgba(255, 255, 255, 0.05)" },
+                    ticks: { color: "#99aebe", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: "index", intersect: false },
-                    layout: { padding: { left: 4, right: 4 } },
-                    plugins: {
-                        ...buildDetailChartPlugins(),
-                    },
-                    scales: {
-                        x: buildDetailXAxis(),
-                        "y-hr": {
-                            type: "linear",
-                            position: "left",
-                            title: buildDetailAxisTitle("心率", "#fb7185"),
-                            grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#fb7185", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
-                        },
-                        "y-elev": {
-                            type: "linear",
-                            position: "right",
-                            title: buildDetailAxisTitle("海拔", "#94a3b8"),
-                            grid: { display: false },
-                            ticks: { color: "#94a3b8", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
-                        }
-                    }
-                }
-            }));
-        }
-
-        // 4. Pace + Elevation Chart
-        if (paceElevCanvas) {
-            visuals.charts.push(new window.Chart(paceElevCanvas, {
-                type: "line",
-                data: {
-                    labels: timeLabels,
-                    datasets: [
-                        {
-                            label: "海拔高度 (m)",
-                            data: dsAlt,
-                            borderColor: "transparent",
-                            backgroundColor: "rgba(148, 163, 184, 0.2)",
-                            borderWidth: 0,
-                            fill: true,
-                            pointRadius: 0,
-                            tension: 0.2,
-                            yAxisID: "y-elev",
-                        },
-                        {
-                            label: "配速 (min/km)",
-                            data: dsPace,
-                            borderColor: "#5eead4",
-                            backgroundColor: "transparent",
-                            borderWidth: 1,
-                            pointRadius: 0,
-                            tension: 0.3,
-                            yAxisID: "y-pace",
-                        }
-                    ]
+                "y-spacer": {
+                    type: "linear",
+                    position: "right",
+                    display: false,
+                    min: 0,
+                    max: 1,
+                    grid: { display: false, drawOnChartArea: false, drawTicks: false },
+                    ticks: { display: false },
+                    border: { display: false },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: "index", intersect: false },
-                    layout: { padding: { left: 4, right: 4 } },
-                    plugins: {
-                        ...buildDetailChartPlugins(),
-                    },
-                    scales: {
-                        x: buildDetailXAxis(),
-                        "y-pace": {
-                            type: "linear",
-                            position: "left",
-                            reverse: true,
-                            min: yPaceMin,
-                            max: yPaceMax,
-                            title: buildDetailAxisTitle("配速", "#5eead4"),
-                            grid: { color: "rgba(255, 255, 255, 0.05)" },
-                            ticks: { color: "#5eead4", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
-                        },
-                        "y-elev": {
-                            type: "linear",
-                            position: "right",
-                            title: buildDetailAxisTitle("海拔", "#94a3b8"),
-                            grid: { display: false },
-                            ticks: { color: "#94a3b8", font: { size: 9 }, padding: 6 },
-                            ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
-                        }
-                    }
-                }
-            }));
-        }
-
-        bindSynchronizedHover(visuals.charts);
-    } else if (!window.Chart) {
-        [perfCanvas, elevCanvas, hrElevCanvas, paceElevCanvas].forEach((canvas) => {
-            const container = canvas?.closest(".chart-container");
-            if (!container) return;
-            container.innerHTML = '<p class="detail-copy">圖表元件未載入，暫時無法顯示趨勢圖。</p>';
+            }),
         });
+    } else {
+        setChartUnavailableMessage(runId, ["perf", "elev"]);
     }
 
-    renderHeartRateZoneBar(runId, hrSummary);
-    visuals.map = renderRunRouteMap(runId, bundle);
-    state.runCharts.set(runId, visuals);
+    visuals.map = renderRunRouteMap(runId, visuals.bundle);
+    visuals.renderedPanels.add("overview");
+}
+
+function renderHeartRateVisuals(runId, visuals, chartData) {
+    if (visuals.renderedPanels.has("hr")) return;
+
+    if (window.Chart && chartData) {
+        const hrElevCanvas = document.getElementById(`run-hr-elev-chart-${runId}`);
+        createRunChart(visuals, "hr-elev", hrElevCanvas, {
+            type: "line",
+            data: {
+                labels: chartData.timeLabels,
+                datasets: [
+                    {
+                        label: "海拔高度 (m)",
+                        data: chartData.dsAlt,
+                        borderColor: "transparent",
+                        backgroundColor: "rgba(148, 163, 184, 0.2)",
+                        borderWidth: 0,
+                        fill: true,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        tension: 0.2,
+                        yAxisID: "y-elev",
+                    },
+                    {
+                        label: "心率 (bpm)",
+                        data: chartData.dsHr,
+                        borderColor: "#fb7185",
+                        backgroundColor: "transparent",
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        tension: 0.3,
+                        yAxisID: "y-hr",
+                    },
+                ],
+            },
+            options: buildDetailChartOptions({
+                x: buildDetailXAxis(),
+                "y-hr": {
+                    type: "linear",
+                    position: "left",
+                    title: buildDetailAxisTitle("心率", "#fb7185"),
+                    grid: { color: "rgba(255, 255, 255, 0.05)" },
+                    ticks: { color: "#fb7185", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
+                },
+                "y-elev": {
+                    type: "linear",
+                    position: "right",
+                    title: buildDetailAxisTitle("海拔", "#94a3b8"),
+                    grid: { display: false },
+                    ticks: { color: "#94a3b8", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
+                },
+            }),
+        });
+    } else {
+        setChartUnavailableMessage(runId, ["hr-elev"]);
+    }
+
+    renderHeartRateZoneBar(runId, visuals.hrSummary);
+    visuals.renderedPanels.add("hr");
+}
+
+function renderPaceVisuals(runId, visuals, chartData) {
+    if (visuals.renderedPanels.has("pace")) return;
+
+    if (window.Chart && chartData) {
+        const paceElevCanvas = document.getElementById(`run-pace-elev-chart-${runId}`);
+        createRunChart(visuals, "pace-elev", paceElevCanvas, {
+            type: "line",
+            data: {
+                labels: chartData.timeLabels,
+                datasets: [
+                    {
+                        label: "海拔高度 (m)",
+                        data: chartData.dsAlt,
+                        borderColor: "transparent",
+                        backgroundColor: "rgba(148, 163, 184, 0.2)",
+                        borderWidth: 0,
+                        fill: true,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        tension: 0.2,
+                        yAxisID: "y-elev",
+                    },
+                    {
+                        label: "配速 (min/km)",
+                        data: chartData.dsPace,
+                        borderColor: "#5eead4",
+                        backgroundColor: "transparent",
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        spanGaps: true,
+                        tension: 0.3,
+                        yAxisID: "y-pace",
+                    },
+                ],
+            },
+            options: buildDetailChartOptions({
+                x: buildDetailXAxis(),
+                "y-pace": {
+                    type: "linear",
+                    position: "left",
+                    reverse: true,
+                    min: chartData.yPaceMin,
+                    max: chartData.yPaceMax,
+                    title: buildDetailAxisTitle("配速", "#5eead4"),
+                    grid: { color: "rgba(255, 255, 255, 0.05)" },
+                    ticks: { color: "#5eead4", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.left),
+                },
+                "y-elev": {
+                    type: "linear",
+                    position: "right",
+                    title: buildDetailAxisTitle("海拔", "#94a3b8"),
+                    grid: { display: false },
+                    ticks: { color: "#94a3b8", font: { size: 9 }, padding: 6 },
+                    ...lockAxisWidth(DETAIL_CHART_AXIS_WIDTH.right),
+                },
+            }),
+        });
+    } else {
+        setChartUnavailableMessage(runId, ["pace-elev"]);
+    }
+
+    visuals.renderedPanels.add("pace");
+}
+
+/**
+ * Render detailed activity visuals for the requested tab only.
+ * @param {string} runId - Activity ID.
+ * @param {object} bundle - Contains detail and streams.
+ * @param {object} hrSummary - Pre-calculated HR zone summary.
+ * @param {string} panel - Detail tab to render: overview, hr, or pace.
+ */
+export function renderActivityDetailCharts(runId, bundle, hrSummary, panel = "overview") {
+    const detailsEl = document.getElementById(`run-details-${runId}`);
+    if (!detailsEl || detailsEl.classList.contains("hidden")) return;
+
+    const visuals = getRunVisuals(runId, bundle, hrSummary);
+    const chartData = getCachedDetailChartData(visuals);
+
+    if (window.Chart && chartData) {
+        ensureSyncPlugin();
+    }
+
+    if (panel === "hr") {
+        renderHeartRateVisuals(runId, visuals, chartData);
+    } else if (panel === "pace") {
+        renderPaceVisuals(runId, visuals, chartData);
+    } else {
+        renderOverviewVisuals(runId, visuals, chartData);
+    }
+
+    bindSynchronizedHover(getRunVisualCharts(visuals));
+    resizeRunVisuals(runId);
 }

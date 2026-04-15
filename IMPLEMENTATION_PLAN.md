@@ -13,10 +13,16 @@
 ## Stage 3: Reduce Repeated Analytics Passes
 **Goal**: Consolidate repeated run-list scans in analytics utilities.
 **Success Criteria**: Derived metrics are computed with fewer redundant filters/reduces and existing analytics tests remain green.
-**Tests**: `npm test`
-**Status**: Not Started
+**Tests**: `npm test`, `npm run check`
+**Status**: Complete
 
-## Stage 4: Add Refactor Safety Nets
+## Stage 4: Reduce Chart Render Cost
+**Goal**: Apply Chart.js performance settings and lazy-render hidden run-detail tab charts.
+**Success Criteria**: Existing chart behavior remains intact while hidden tab charts are only created when viewed.
+**Tests**: `npm test`, `npm run check`
+**Status**: Complete
+
+## Stage 5: Add Refactor Safety Nets
 **Goal**: Add lightweight tests around export serialization and key non-UI helpers.
 **Success Criteria**: Core refactor targets have automated coverage beyond the existing analytics suite.
 **Tests**: `npm test`

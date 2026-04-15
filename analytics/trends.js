@@ -1,6 +1,8 @@
 import { toNumber, average, median } from '../utils/math.js';
 import { startOfDay, startOfWeek } from '../utils/format.js';
 
+const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+
 function sumDistance(runs) {
     return runs.reduce((total, run) => total + run.distanceKm, 0);
 }
@@ -8,21 +10,35 @@ function sumDistance(runs) {
 export function buildWeeklyTrend(runs, now, weeks = 12) {
     const currentWeek = startOfWeek(now);
     const buckets = [];
+    const firstWeek = new Date(currentWeek);
+    firstWeek.setDate(firstWeek.getDate() - (weeks - 1) * 7);
+    const firstWeekTime = firstWeek.getTime();
 
     for (let offset = weeks - 1; offset >= 0; offset -= 1) {
         const weekStart = new Date(currentWeek);
         weekStart.setDate(weekStart.getDate() - offset * 7);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 7);
 
-        const bucketRuns = runs.filter((run) => run.startedAt >= weekStart && run.startedAt < weekEnd);
         buckets.push({
             label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}`,
             weekStart,
-            distanceKm: Number(sumDistance(bucketRuns).toFixed(1)),
-            runCount: bucketRuns.length,
+            distanceKm: 0,
+            runCount: 0,
         });
     }
+
+    runs.forEach((run) => {
+        if (!(run.startedAt instanceof Date)) return;
+        const runWeekStart = startOfWeek(run.startedAt);
+        const bucketIndex = Math.round((runWeekStart.getTime() - firstWeekTime) / MS_PER_WEEK);
+        if (bucketIndex < 0 || bucketIndex >= buckets.length) return;
+
+        buckets[bucketIndex].distanceKm += run.distanceKm;
+        buckets[bucketIndex].runCount += 1;
+    });
+
+    buckets.forEach((bucket) => {
+        bucket.distanceKm = Number(bucket.distanceKm.toFixed(1));
+    });
 
     return buckets;
 }
@@ -43,10 +59,19 @@ export function buildAdvancedMetrics(runs, now) {
     const sevenDaysAgo = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
     const twentyEightDaysAgo = startOfDay(new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000));
 
-    const acuteRuns = runs.filter((run) => run.startedAt >= sevenDaysAgo);
-    const chronicRuns = runs.filter((run) => run.startedAt >= twentyEightDaysAgo);
-    const acuteLoadKm = sumDistance(acuteRuns);
-    const chronicWeeklyAvgKm = sumDistance(chronicRuns) / 4;
+    let acuteLoadKm = 0;
+    let chronicLoadKm = 0;
+
+    runs.forEach((run) => {
+        if (run.startedAt >= twentyEightDaysAgo) {
+            chronicLoadKm += run.distanceKm;
+            if (run.startedAt >= sevenDaysAgo) {
+                acuteLoadKm += run.distanceKm;
+            }
+        }
+    });
+
+    const chronicWeeklyAvgKm = chronicLoadKm / 4;
     const acwr = chronicWeeklyAvgKm > 0 ? acuteLoadKm / chronicWeeklyAvgKm : null;
 
     const efficiencyPairs = recentWindow
