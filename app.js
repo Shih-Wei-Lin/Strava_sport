@@ -101,20 +101,40 @@ function wireGlobalEvents() {
         });
     });
     window.addEventListener("stride:download-run-json", (e) => {
-        import("./export-utils.js").then(m => m.downloadRunJson(e.detail.runId, state.summary, state.detailCache));
+        import("./export-utils.js").then(m => m.downloadRunJson(
+            e.detail.runId, 
+            state.summary, 
+            state.detailCache,
+            (id) => DataController.loadRunDetailBundleWithCache(id)
+        ));
     });
     window.addEventListener("stride:download-run-md", (e) => {
-        import("./export-utils.js").then(m => m.downloadRunMd(e.detail.runId, state.summary, state.detailCache));
+        import("./export-utils.js").then(m => m.downloadRunMd(
+            e.detail.runId, 
+            state.summary, 
+            state.detailCache,
+            (id) => DataController.loadRunDetailBundleWithCache(id)
+        ));
     });
 
     // Global Exports
     const downloadAllJsonBtn = getByIds("download-all-json-btn", "download-all-json");
     downloadAllJsonBtn?.addEventListener("click", () => {
-        import("./export-utils.js").then(m => m.downloadAllRuns("json", state.summary, state.detailCache));
+        import("./export-utils.js").then(m => m.downloadAllRuns(
+            "json", 
+            state.summary, 
+            state.detailCache,
+            (id) => DataController.loadRunDetailBundleWithCache(id)
+        ));
     });
     const downloadAllMdBtn = getByIds("download-all-md-btn", "download-all-md");
     downloadAllMdBtn?.addEventListener("click", () => {
-        import("./export-utils.js").then(m => m.downloadAllRuns("md", state.summary, state.detailCache));
+        import("./export-utils.js").then(m => m.downloadAllRuns(
+            "md", 
+            state.summary, 
+            state.detailCache,
+            (id) => DataController.loadRunDetailBundleWithCache(id)
+        ));
     });
 }
 

@@ -1,4 +1,5 @@
 import { formatPaceFromSpeed } from "./analytics.js";
+import { setStatus, clearStatus } from "./ui-utils.js";
 
 export function buildRunExportPayload(run, bundle) {
     const { detail, streams } = bundle || {};
@@ -165,11 +166,23 @@ export function downloadJson(payload, filename) {
 /**
  * High-level function to download a single run's JSON.
  */
-export async function downloadRunJson(runId, summary, detailCache) {
+export async function downloadRunJson(runId, summary, detailCache, fetchBundleFn) {
     const run = summary?.runs.find(r => r.id === runId);
     if (!run) return;
 
-    const bundle = detailCache.get(runId);
+    let bundle = detailCache.get(runId);
+    if (!bundle && fetchBundleFn) {
+        try {
+            setStatus("Fetching activity details for export...", "info");
+            bundle = await fetchBundleFn(runId);
+            if (bundle) detailCache.set(runId, bundle);
+            clearStatus();
+        } catch (err) {
+            console.error("Failed to fetch bundle for export:", err);
+            setStatus("Could not fetch detail data, exporting summary only.", "warning");
+        }
+    }
+
     const payload = buildRunExportPayload(run, bundle);
     const filename = `${formatDateForFilename(run.startedAt || new Date())}_${slugifyFilename(run.name)}.json`;
     downloadJson(payload, filename);
@@ -178,14 +191,29 @@ export async function downloadRunJson(runId, summary, detailCache) {
 /**
  * High-level function to download all runs.
  */
-export async function downloadAllRuns(format, summary, detailCache) {
+export async function downloadAllRuns(format, summary, detailCache, fetchBundleFn) {
     if (!summary?.runs?.length) return;
 
     const records = [];
-    for (const run of summary.runs) {
-        const bundle = detailCache.get(run.id);
+    const total = summary.runs.length;
+
+    for (let i = 0; i < total; i++) {
+        const run = summary.runs[i];
+        let bundle = detailCache.get(run.id);
+
+        if (!bundle && fetchBundleFn) {
+            try {
+                setStatus(`Fetching activity data ${i + 1} of ${total}...`, "info");
+                bundle = await fetchBundleFn(run.id);
+                if (bundle) detailCache.set(run.id, bundle);
+            } catch (err) {
+                console.error(`Failed to fetch bundle for run ${run.id}:`, err);
+            }
+        }
         records.push(buildAggregateRecord(run, bundle));
     }
+    
+    clearStatus();
 
     const aggregate = {
         exported_at: new Date().toISOString(),
@@ -259,12 +287,25 @@ export function buildRunMarkdown(run, bundle) {
 /**
  * High-level function to download a single run's Markdown.
  */
-export async function downloadRunMd(runId, summary, detailCache) {
+export async function downloadRunMd(runId, summary, detailCache, fetchBundleFn) {
     const run = summary?.runs.find((r) => r.id === runId);
     if (!run) return;
 
-    const bundle = detailCache.get(runId);
+    let bundle = detailCache.get(runId);
+    if (!bundle && fetchBundleFn) {
+        try {
+            setStatus("Fetching activity details for export...", "info");
+            bundle = await fetchBundleFn(runId);
+            if (bundle) detailCache.set(runId, bundle);
+            clearStatus();
+        } catch (err) {
+            console.error("Failed to fetch bundle for export:", err);
+            setStatus("Could not fetch detail data, exporting summary only.", "warning");
+        }
+    }
+
     const markdown = buildRunMarkdown(run, bundle);
     const filename = `${formatDateForFilename(run.startedAt || new Date())}_${slugifyFilename(run.name)}.md`;
     downloadText(markdown, filename, "text/markdown");
 }
+
