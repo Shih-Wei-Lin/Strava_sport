@@ -1,4 +1,5 @@
 import { state } from "../state.js";
+import { escapeHtml } from "../analytics.js";
 
 const HR_ZONE_COLORS = [
     "rgba(74, 222, 128, 0.82)", // Z1
@@ -130,7 +131,7 @@ function buildDownsampledIndices(length, limit = 150) {
     if (!Number.isInteger(length) || length <= 0) return [];
     if (length <= limit) return Array.from({ length }, (_, index) => index);
 
-    const step = Math.max(1, Math.floor(length / limit));
+    const step = Math.max(1, Math.ceil(length / limit));
     const indices = [];
     for (let index = 0; index < length; index += step) {
         indices.push(index);
@@ -246,11 +247,10 @@ function bindSynchronizedHover(charts) {
     synced.forEach((chart) => {
         chart.options.onHover = (_event, activeElements) => {
             const hovered = Array.isArray(activeElements) ? activeElements : [];
-            if (hovered.length === 0) {
-                syncTo(chart, null);
-                return;
-            }
-            syncTo(chart, hovered[0].index);
+            const newIndex = hovered.length === 0 ? null : hovered[0].index;
+            if (chart.$lastHoverIndex === newIndex) return;
+            chart.$lastHoverIndex = newIndex;
+            syncTo(chart, newIndex);
         };
 
         if (chart.$strideMouseLeaveHandler) {
@@ -281,14 +281,14 @@ function renderHeartRateZoneBar(runId, hrSummary) {
         const sharePercent = Number((zone.share * 100).toFixed(1));
         const width = Math.max(zone.share * 100, 1.8);
         return `
-            <div class="hr-zone-segment" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]}; --zone-width:${width}%;" title="${zone.label} ${sharePercent}% (${formatZoneDuration(zone.seconds)})"></div>
+            <div class="hr-zone-segment" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]}; --zone-width:${width}%;" title="${escapeHtml(zone.label)} ${sharePercent}% (${formatZoneDuration(zone.seconds)})"></div>
         `;
     }).join("");
 
     const legends = hrSummary.zones.map((zone, index) => `
         <div class="hr-zone-legend-item">
             <span class="hr-zone-dot" style="--zone-color:${HR_ZONE_COLORS[index] || HR_ZONE_COLORS[HR_ZONE_COLORS.length - 1]};"></span>
-            <span class="hr-zone-legend-label">${zone.label}</span>
+            <span class="hr-zone-legend-label">${escapeHtml(zone.label)}</span>
             <strong>${(zone.share * 100).toFixed(1)}%</strong>
             <span>${formatZoneDuration(zone.seconds)}</span>
         </div>
@@ -361,7 +361,11 @@ function renderRunRouteMap(runId, bundle) {
     const container = document.getElementById(`run-map-${runId}`);
     if (!container) return null;
 
-    const points = getLatLngPoints(bundle?.streams);
+    let points = getLatLngPoints(bundle?.streams);
+    if (points.length > 250) {
+        const indices = buildDownsampledIndices(points.length, 250);
+        points = indices.map(i => points[i]);
+    }
     if (points.length < 2) {
         container.innerHTML = '<p class="detail-copy">此活動沒有可用的 GPS 軌跡。</p>';
         return null;
@@ -486,8 +490,8 @@ function buildDetailChartData(bundle) {
     const velocityData = streams.velocity_smooth?.data || [];
     const indices = buildDownsampledIndices(timeData.length, 100);
     const timeLabels = indices.map((index) => formatTimeLabel(timeData[index]));
-    const dsHr = indices.map((index) => hrData[index] || null);
-    const dsAlt = indices.map((index) => altitudeData[index] || null);
+    const dsHr = indices.map((index) => hrData[index] ?? null);
+    const dsAlt = indices.map((index) => altitudeData[index] ?? null);
     const dsPace = indices.map((index) => {
         const speed = velocityData[index];
         if (!speed || speed <= 0.5) return null;

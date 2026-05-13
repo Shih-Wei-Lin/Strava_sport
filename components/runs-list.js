@@ -132,28 +132,30 @@ export function renderRunsSkeleton() {
 }
 
 function createRunCardHtml(run) {
-    const badge = run.distanceKm >= 21.1 ? "半馬級別" : run.distanceKm >= 10 ? "長跑" : "一般跑步";
+    const distNum = typeof run.distanceKm === "number" ? run.distanceKm : 0;
+    const badge = distNum >= 21.1 ? "半馬級別" : distNum >= 10 ? "長跑" : "一般跑步";
     const heartRateLabel = run.averageHeartrate ? `${Math.round(run.averageHeartrate)} bpm` : "--";
+    const escapedId = escapeHtml(String(run.id));
     
     return `
-        <article id="run-${run.id}" class="run-card">
+        <article id="run-${escapedId}" class="run-card">
             <div class="run-main">
                 <div class="run-header">
                     <div class="run-heading">
                         <div class="run-title-row">
                             <h3 class="run-title">${escapeHtml(run.name)}</h3>
-                            <a href="https://www.strava.com/activities/${run.id}" target="_blank" rel="noopener" class="run-link-icon" aria-label="在 Strava 開啟活動" title="在 Strava 開啟活動">${buildExternalLinkIcon()}</a>
+                            <a href="https://www.strava.com/activities/${escapedId}" target="_blank" rel="noopener" class="run-link-icon" aria-label="在 Strava 開啟活動" title="在 Strava 開啟活動">${buildExternalLinkIcon()}</a>
                         </div>
                         <div class="run-meta-line">
-                            <p class="run-date">${run.dateLabel}</p>
+                            <p class="run-date">${escapeHtml(String(run.dateLabel || ""))}</p>
                             <span class="run-badge">${badge}</span>
                         </div>
                     </div>
                 </div>
                 <div class="run-ribbon">
-                    ${createMetricPillHtml("distance", `${run.distanceKm.toFixed(2)} km`, "距離")}
-                    ${createMetricPillHtml("pace", run.averagePaceLabel, "配速")}
-                    ${createMetricPillHtml("duration", run.movingTimeLabel, "時間")}
+                    ${createMetricPillHtml("distance", `${distNum.toFixed(2)} km`, "距離")}
+                    ${createMetricPillHtml("pace", escapeHtml(String(run.averagePaceLabel || "")), "配速")}
+                    ${createMetricPillHtml("duration", escapeHtml(String(run.movingTimeLabel || "")), "時間")}
                     ${createMetricPillHtml("heart", heartRateLabel, "心率")}
                 </div>
                 <div class="run-card-side">
@@ -161,20 +163,20 @@ function createRunCardHtml(run) {
                         ${createSparklineSvg(run)}
                     </div>
                     <div class="run-actions">
-                        <button class="btn btn-primary btn-sm btn-expand" data-id="${run.id}">詳細分析</button>
+                        <button class="btn btn-primary btn-sm btn-expand" data-id="${escapedId}">詳細分析</button>
                         <details class="run-export">
                             <summary class="btn btn-ghost btn-sm btn-icon" aria-label="匯出活動資料" title="匯出活動資料">
                                 ${buildDownloadIcon()}
                             </summary>
                             <div class="run-export-menu">
-                                <button class="run-export-option btn-download-json" type="button" data-id="${run.id}">JSON</button>
-                                <button class="run-export-option btn-download-md" type="button" data-id="${run.id}">Markdown</button>
+                                <button class="run-export-option btn-download-json" type="button" data-id="${escapedId}">JSON</button>
+                                <button class="run-export-option btn-download-md" type="button" data-id="${escapedId}">Markdown</button>
                             </div>
                         </details>
                     </div>
                 </div>
             </div>
-            <div id="run-details-${run.id}" class="run-details hidden"></div>
+            <div id="run-details-${escapedId}" class="run-details hidden"></div>
         </article>
     `;
 }
@@ -262,7 +264,7 @@ export async function toggleRunDetails(runId) {
         });
         window.dispatchEvent(event);
     } catch (error) {
-        detailsEl.innerHTML = `<p class="detail-copy status-error">載入失敗：${error.message}</p>`;
+        detailsEl.innerHTML = `<p class="detail-copy status-error">載入失敗：${escapeHtml(String(error.message))}</p>`;
     }
 }
 
@@ -278,8 +280,15 @@ export async function toggleRunDetails(runId) {
  * - {void}: This function does not return a value.
  */
 export function renderRunDetailsContent(container, run, bundle) {
+    disposeRunVisuals(run.id);
+    if (!bundle || !bundle.detail || !bundle.streams) {
+        container.innerHTML = `<p class="detail-copy status-error">載入失敗：無效的活動資料。</p>`;
+        return;
+    }
+
     const { detail, streams } = bundle;
     const hrSummary = buildHeartRateZoneSummary(streams, detail, state.athleteZones);
+    const escapedId = escapeHtml(String(run.id));
     
     let weatherHtml = "";
     let intervalsHtml = "";
@@ -297,9 +306,9 @@ export function renderRunDetailsContent(container, run, bundle) {
                     <tbody>
                         ${splits.map(s => `
                             <tr>
-                                <td>${s.split}</td>
+                                <td>${escapeHtml(String(s.split || ""))}</td>
                                 ${buildSplitPaceCell(s, paceSummary)}
-                                <td>${Math.round(s.elevation_difference)}m</td>
+                                <td>${typeof s.elevation_difference === "number" ? Math.round(s.elevation_difference) : 0}m</td>
                                 <td>${s.average_heartrate ? Math.round(s.average_heartrate) : "--"}</td>
                             </tr>
                         `).join("")}
@@ -310,35 +319,36 @@ export function renderRunDetailsContent(container, run, bundle) {
     ` : "";
 
     // Calculate max display
-    const maxGrade = detail.max_grade ? `${detail.max_grade}%` : "--";
-    const maxWatts = detail.max_watts ? `${Math.round(detail.max_watts)}W` : "--";
+    const maxGrade = typeof detail.max_grade === "number" ? `${detail.max_grade}%` : "--";
+    const maxWatts = typeof detail.max_watts === "number" ? `${Math.round(detail.max_watts)}W` : "--";
+    const calories = typeof detail.calories === "number" ? Math.round(detail.calories) : "--";
 
     container.innerHTML = `
         <div class="run-details-layout">
             <div class="run-detail-tabs" role="tablist" aria-label="單次跑步分析分頁">
-                <button class="run-detail-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="run-detail-panel-${run.id}-overview" data-run-detail-tab="overview">綜合表現</button>
-                <button class="run-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="run-detail-panel-${run.id}-hr" data-run-detail-tab="hr">心率分析</button>
-                <button class="run-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="run-detail-panel-${run.id}-pace" data-run-detail-tab="pace">配速分析</button>
+                <button class="run-detail-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="run-detail-panel-${escapedId}-overview" data-run-detail-tab="overview">綜合表現</button>
+                <button class="run-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="run-detail-panel-${escapedId}-hr" data-run-detail-tab="hr">心率分析</button>
+                <button class="run-detail-tab" type="button" role="tab" aria-selected="false" aria-controls="run-detail-panel-${escapedId}-pace" data-run-detail-tab="pace">配速分析</button>
             </div>
 
-            <section id="run-detail-panel-${run.id}-overview" class="run-detail-panel is-active" role="tabpanel" data-run-detail-panel="overview">
+            <section id="run-detail-panel-${escapedId}-overview" class="run-detail-panel is-active" role="tabpanel" data-run-detail-panel="overview">
                 <div class="run-details-grid">
                     <div class="detail-card full-width">
                         <p class="detail-title">GPS 路線</p>
-                        <div id="run-map-${run.id}" class="run-map"></div>
+                        <div id="run-map-${escapedId}" class="run-map"></div>
                     </div>
 
                     <div class="detail-card full-width">
                         <p class="detail-title">性能趨勢</p>
                         <div class="chart-container" style="height: 200px;">
-                            <canvas id="run-perf-chart-${run.id}"></canvas>
+                            <canvas id="run-perf-chart-${escapedId}"></canvas>
                         </div>
                     </div>
 
                     <div class="detail-card full-width">
                         <p class="detail-title">海拔高度</p>
                         <div class="chart-container" style="height: 180px;">
-                            <canvas id="run-elev-chart-${run.id}"></canvas>
+                            <canvas id="run-elev-chart-${escapedId}"></canvas>
                         </div>
                     </div>
 
@@ -348,7 +358,7 @@ export function renderRunDetailsContent(container, run, bundle) {
                             總爬升：${Math.round(run.elevationGain || 0)}m · 
                             最大坡度：${maxGrade} · 
                             最大功率：${maxWatts} · 
-                            卡路里：${detail.calories ? Math.round(detail.calories) : "--"} kcal
+                            卡路里：${calories} kcal
                         </p>
                     </div>
 
@@ -357,29 +367,29 @@ export function renderRunDetailsContent(container, run, bundle) {
                 </div>
             </section>
 
-            <section id="run-detail-panel-${run.id}-hr" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="hr">
+            <section id="run-detail-panel-${escapedId}-hr" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="hr">
                 <div class="run-details-grid">
                     <div class="detail-card full-width">
                         <p class="detail-title">心率與海拔</p>
                         <div class="chart-container" style="height: 200px;">
-                            <canvas id="run-hr-elev-chart-${run.id}"></canvas>
+                            <canvas id="run-hr-elev-chart-${escapedId}"></canvas>
                         </div>
                     </div>
 
                     <div class="detail-card full-width">
                         <p class="detail-title">心率區間分佈</p>
-                        <div id="hr-zones-bar-${run.id}" class="hr-zones-bar"></div>
-                        <div id="hr-zones-legend-${run.id}" class="hr-zones-legend"></div>
+                        <div id="hr-zones-bar-${escapedId}" class="hr-zones-bar"></div>
+                        <div id="hr-zones-legend-${escapedId}" class="hr-zones-legend"></div>
                     </div>
                 </div>
             </section>
 
-            <section id="run-detail-panel-${run.id}-pace" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="pace">
+            <section id="run-detail-panel-${escapedId}-pace" class="run-detail-panel hidden" role="tabpanel" data-run-detail-panel="pace">
                 <div class="run-details-grid">
                     <div class="detail-card full-width">
                         <p class="detail-title">配速與海拔</p>
                         <div class="chart-container" style="height: 200px;">
-                            <canvas id="run-pace-elev-chart-${run.id}"></canvas>
+                            <canvas id="run-pace-elev-chart-${escapedId}"></canvas>
                         </div>
                     </div>
                     ${splitsHtml}
